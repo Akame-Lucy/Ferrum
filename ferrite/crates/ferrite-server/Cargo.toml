@@ -27,7 +27,7 @@ tower-http = { version = "0.5", features = ["cors", "trace", "set-header"] }
 tower-cookies = "0.10"
 argon2 = "0.5"
 totp-lite = "2.0"
-axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 rustls-pemfile = "2.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
