@@ -15,7 +15,9 @@ impl S3Backend {
         Self { config }
     }
 
-    fn create_bucket(&self) -> Result<Bucket, RemoteError> {
+    // rust-s3 0.35 onward hands back a boxed Bucket. Callers deref through it
+    // unchanged, so the box only shows up in this signature.
+    fn create_bucket(&self) -> Result<Box<Bucket>, RemoteError> {
         let bucket_name = self.config.bucket.as_deref().unwrap_or("default");
         let access_key = &self.config.username;
         let secret_key = self.config.auth.password.as_deref()

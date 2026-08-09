@@ -28,7 +28,6 @@ tower-cookies = "0.10"
 argon2 = "0.5"
 totp-lite = "2.0"
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-rustls-pemfile = "2.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 mime_guess = "2.0"
@@ -36,6 +35,6 @@ sha2 = "0.10"
 sha1 = "0.10"
 rand = "0.8"
 zip = "2.1"
-snow = "0.9"
+snow = "0.10"
 
 

@@ -20,30 +20,29 @@ yanked = "deny"
 # them are "wontfix" - each needs a reason and an exit plan, and an entry that
 # has outlived its reason should be deleted so the check goes red again.
 ignore = [
-    # --- Real vulnerabilities, pending a dependency upgrade -----------------
+    # --- Real vulnerabilities, blocked upstream ----------------------------
     #
-    # Both are in quick-xml 0.30, pinned transitively by rust-s3 0.34 (via
-    # aws-creds). Reachable only through the S3 backend, parsing responses from
-    # the S3 endpoint the operator configured: a hostile or compromised
-    # endpoint could exhaust memory or burn CPU. Not reachable at all for
-    # deployments that do not configure an S3 remote.
+    # Both are in quick-xml, pulled by aws-creds under rust-s3. Reachable only
+    # through the S3 backend, parsing responses from the S3 endpoint the
+    # operator configured: a hostile or compromised endpoint could exhaust
+    # memory or burn CPU. Not reachable at all for deployments that do not
+    # configure an S3 remote.
     #
-    # Fix: upgrade rust-s3 0.34 -> 0.37, which moves to quick-xml >= 0.41 (and
-    # drops async-std, clearing RUSTSEC-2025-0052 below). That is an API-
-    # breaking upgrade to ferrite-core/src/s3.rs and needs testing against a
-    # real S3 endpoint, so it belongs in its own PR rather than riding along
-    # with unrelated work.
+    # The rust-s3 0.34 -> 0.37 upgrade moved quick-xml from 0.30 to 0.38.4,
+    # which is NOT far enough: both advisories are only fixed in 0.41. The cap
+    # is aws-creds 0.39's `quick-xml ^0.38` requirement, so we cannot reach the
+    # fix by updating alone. Exit is upstream shipping an aws-creds that allows
+    # quick-xml 0.41+; re-check on each rust-s3 release and delete these two
+    # lines when it lands.
     "RUSTSEC-2026-0194", # quick-xml: quadratic parse time on duplicate attribute names
     "RUSTSEC-2026-0195", # quick-xml: unbounded namespace allocation in NsReader
 
-    # --- Unmaintained crates, no upgrade available -------------------------
+    # --- Unmaintained crate, no upgrade available --------------------------
     #
-    # "Unmaintained" is a maintenance signal, not an exploitable defect. All
-    # three are transitive and have no fixed version to move to; the only exit
-    # is replacing the direct dependency that pulls them in.
-    "RUSTSEC-2025-0052", # async-std, via suppaftp -> cleared by the rust-s3 upgrade above
-    "RUSTSEC-2025-0134", # rustls-pemfile, via axum-server; upstream folded it into rustls-pki-types
-    "RUSTSEC-2017-0008", # serial, via portable-pty; needs upstream to move to serialport
+    # "Unmaintained" is a maintenance signal, not an exploitable defect. This
+    # one is transitive with no fixed version to move to; the exit is suppaftp
+    # dropping async-std, or us replacing suppaftp as the FTP backend.
+    "RUSTSEC-2025-0052", # async-std, via suppaftp
 ]
 
 [licenses]

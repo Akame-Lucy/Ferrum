@@ -28,8 +28,10 @@ impl NoiseSession {
         local_keypair: &Keypair,
     ) -> Result<(Self, Vec<u8>), Box<dyn Error + Send + Sync>> {
         let builder = Builder::new(NOISE_PATTERN.parse()?);
+        // snow 0.10 validates the key length here rather than at build time,
+        // so this is fallible where it used to be infallible.
         let mut state = builder
-            .local_private_key(&local_keypair.private)
+            .local_private_key(&local_keypair.private)?
             .build_responder()?;
 
         let mut buf = [0u8; 1024];
@@ -64,8 +66,10 @@ impl NoiseSession {
         local_keypair: &Keypair,
     ) -> Result<(Self, Vec<u8>), Box<dyn Error + Send + Sync>> {
         let builder = Builder::new(NOISE_PATTERN.parse()?);
+        // snow 0.10 validates the key length here rather than at build time,
+        // so this is fallible where it used to be infallible.
         let mut state = builder
-            .local_private_key(&local_keypair.private)
+            .local_private_key(&local_keypair.private)?
             .build_initiator()?;
 
         // -> e
