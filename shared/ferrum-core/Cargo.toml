@@ -18,7 +18,7 @@ serde_yaml = "0.9"
 serde_json = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
-snow = "0.9"
+snow = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
