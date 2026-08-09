@@ -1,0 +1,25 @@
+[package]
+name = "ferrum-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+# Internal to the workspace; Ferrum ships binaries, not crates.io libraries.
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1.6"
+futures-core = "0.3"
+futures-util = "0.3"
+tokio = { version = "1.38", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+snow = "0.9"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+

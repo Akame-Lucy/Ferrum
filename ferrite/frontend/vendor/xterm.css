@@ -1,0 +1,54 @@
+.xterm {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #ffffff;
+    background-color: #050507;
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.xterm.focus,
+.xterm:focus {
+    outline: none;
+}
+.xterm .xterm-helpers {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 5;
+}
+.xterm .xterm-helper-textarea {
+    position: absolute;
+    opacity: 0;
+    left: -9999em;
+    top: 0;
+    width: 0;
+    height: 0;
+    z-index: -10;
+    white-space: nowrap;
+    overflow: hidden;
+    resize: none;
+}
+.xterm .xterm-viewport {
+    background-color: #050507;
+    overflow-y: scroll;
+    cursor: default;
+    position: absolute;
+    right: 0;
+    left: 0;
+    top: 0;
+    bottom: 0;
+}
+.xterm .xterm-screen {
+    position: relative;
+}
+.xterm .xterm-screen canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+.xterm-rows {
+    position: absolute;
+    left: 0;
+    top: 0;
+}

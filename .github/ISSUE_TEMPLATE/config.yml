@@ -1,0 +1,16 @@
+# Force every report through a template - "blank issue" tickets almost always
+# arrive missing the version and platform, which costs a round trip.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Akame-Lucy/Ferrum/security/advisories/new
+    about: Report auth bypass, path escape, key handling, or transport issues privately. Never in a public issue.
+
+  - name: Deployment and hardening questions
+    url: https://github.com/Akame-Lucy/Ferrum/blob/main/docs/SECURITY.md
+    about: How to bind, proxy, and scope a Ferrum deployment safely.
+
+  - name: Questions and ideas
+    url: https://github.com/Akame-Lucy/Ferrum/discussions
+    about: Usage questions and open-ended design discussion belong here, not in the issue tracker.

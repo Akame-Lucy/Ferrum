@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in Ferrite or Ferrous behaves differently than documented
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report security vulnerabilities here.** Anything involving
+        auth bypass, path escape, key handling, or the Noise transport goes
+        through private disclosure - see [SECURITY.md](../blob/main/docs/SECURITY.md).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Ferrite (client / web UI / control plane)
+        - Ferrous (server agent)
+        - ferrum-core (shared traits, config, Noise transport)
+        - Packaging / deployment
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend in use
+      description: Which remote is involved, if any.
+      options:
+        - Local filesystem
+        - SFTP
+        - FTP
+        - WebDAV
+        - S3
+        - Ferrous
+        - SSH terminal (PTY)
+        - Not backend-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: |
+        Run with `RUST_LOG=debug` if you can. **Redact hostnames, usernames,
+        tokens, and key material** before pasting.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag, or `git rev-parse --short HEAD` for a source build.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: "e.g. Ubuntu 24.04 x86_64, Windows 11 x64, macOS 15 arm64"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I removed all credentials and key material from what I pasted above.
+          required: true

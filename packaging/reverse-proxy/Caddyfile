@@ -1,0 +1,20 @@
+# Reverse proxy for Ferrite: TLS termination + a real hostname in front of
+# a Ferrite bound to 127.0.0.1 (the default). Caddy handles certificate
+# provisioning/renewal and websocket upgrade proxying automatically, so this
+# is close to the whole config.
+
+ferrite.example.com {
+	reverse_proxy 127.0.0.1:8080 {
+		# Long-lived, mostly-idle terminal/collab websocket sessions
+		# shouldn't get killed for going quiet between keystrokes.
+		flush_interval -1
+	}
+
+	header Strict-Transport-Security "max-age=63072000; includeSubDomains"
+
+	# Raise past Caddy's default if you want larger browser uploads through
+	# Ferrite's file uploader.
+	request_body {
+		max_size 512MB
+	}
+}

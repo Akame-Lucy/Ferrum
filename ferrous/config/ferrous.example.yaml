@@ -1,0 +1,24 @@
+bind: "127.0.0.1:9090"
+
+# Where the agent's own persistent Noise identity keypair is stored, generated
+# on first run. Back this up; losing it means every Ferrite that pinned the
+# old agent_pubkey will refuse to reconnect until repinned.
+identity_path: "/etc/ferrous/ferrous_identity.key"
+
+# Drop root after binding, before accepting any connection or spawning a
+# shell. Only takes effect if the process actually starts as root; if you're
+# running under systemd's User=/Group= instead (recommended, see
+# packaging/systemd/ferrous-agent.service), leave these unset.
+# run_as_user: "ferrous"
+# run_as_group: "ferrous"
+
+# Each entry is one authorized client, identified by its Noise static public
+# key (printed by Ferrite at startup, or via `ferrite show-agent-key` if you
+# added that convenience). A client not listed here is rejected before any
+# request is processed, no matter how it presents itself.
+clients:
+  - pubkey: "REPLACE_WITH_FERRITE_CLIENT_PUBLIC_KEY_HEX"
+    allowed_paths:
+      - "/srv/data"
+    read_only: false
+    allow_shell: true

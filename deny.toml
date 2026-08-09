@@ -1,0 +1,84 @@
+# cargo-deny policy - enforced by .github/workflows/security.yml.
+#
+# Run it locally exactly as CI does:
+#   cargo install cargo-deny --locked
+#   cargo deny --workspace --all-features check
+#
+# Ferrum ships prebuilt binaries that statically link this entire dependency
+# tree, so a dependency's license is effectively a license on our releases and
+# a dependency's vulnerability is effectively ours.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# A yanked crate means the author pulled it for a reason; find out which.
+yanked = "deny"
+
+# Every entry here is a known finding we are shipping with on purpose. None of
+# them are "wontfix" - each needs a reason and an exit plan, and an entry that
+# has outlived its reason should be deleted so the check goes red again.
+ignore = [
+    # --- Real vulnerabilities, pending a dependency upgrade -----------------
+    #
+    # Both are in quick-xml 0.30, pinned transitively by rust-s3 0.34 (via
+    # aws-creds). Reachable only through the S3 backend, parsing responses from
+    # the S3 endpoint the operator configured: a hostile or compromised
+    # endpoint could exhaust memory or burn CPU. Not reachable at all for
+    # deployments that do not configure an S3 remote.
+    #
+    # Fix: upgrade rust-s3 0.34 -> 0.37, which moves to quick-xml >= 0.41 (and
+    # drops async-std, clearing RUSTSEC-2025-0052 below). That is an API-
+    # breaking upgrade to ferrite-core/src/s3.rs and needs testing against a
+    # real S3 endpoint, so it belongs in its own PR rather than riding along
+    # with unrelated work.
+    "RUSTSEC-2026-0194", # quick-xml: quadratic parse time on duplicate attribute names
+    "RUSTSEC-2026-0195", # quick-xml: unbounded namespace allocation in NsReader
+
+    # --- Unmaintained crates, no upgrade available -------------------------
+    #
+    # "Unmaintained" is a maintenance signal, not an exploitable defect. All
+    # three are transitive and have no fixed version to move to; the only exit
+    # is replacing the direct dependency that pulls them in.
+    "RUSTSEC-2025-0052", # async-std, via suppaftp -> cleared by the rust-s3 upgrade above
+    "RUSTSEC-2025-0134", # rustls-pemfile, via axum-server; upstream folded it into rustls-pki-types
+    "RUSTSEC-2017-0008", # serial, via portable-pty; needs upstream to move to serialport
+]
+
+[licenses]
+version = 2
+# Permissive licenses only, plus MPL-2.0 (file-level copyleft, which linking
+# does not trigger). Anything not on this list fails the build rather than
+# quietly shipping in a release archive.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are near-unavoidable in a tree this size; surface them
+# without blocking, so bloat stays visible but does not gate merges.
+multiple-versions = "warn"
+# A wildcard dependency makes builds unreproducible.
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

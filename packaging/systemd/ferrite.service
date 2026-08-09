@@ -1,0 +1,54 @@
+[Unit]
+Description=Ferrite server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ferrite serve --config /etc/ferrite/ferrite.yaml --bind 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+
+# Runs as a dedicated, unprivileged, non-login system user. Create it once:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin ferrite
+# and make sure it owns /etc/ferrite.
+User=ferrite
+Group=ferrite
+
+# --- Sandboxing ---
+# ProtectSystem=strict makes the whole filesystem read-only except what's
+# listed below. /etc/ferrite must stay writable: the web UI's Settings/Users
+# panel and remote-connection editor write ferrite.yaml back to disk, and the
+# client identity key used to talk to Ferrous agents lives next to it. Add
+# every local filesystem path any `local`/base_path remote in ferrite.yaml
+# actually needs to browse.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/ferrite
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RemoveIPC=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Bind to 127.0.0.1 (the default) and put a reverse proxy in front for
+# TLS + a real hostname; see packaging/reverse-proxy/. If you'd rather have
+# Ferrite terminate TLS itself, set tls.enabled in ferrite.yaml instead of
+# --bind above, and only uncomment this if you're binding a port below 1024:
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

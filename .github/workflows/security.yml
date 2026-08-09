@@ -1,0 +1,67 @@
+name: Security Firewall & Audit
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  schedule:
+    # Weekly sweep every Monday at 00:00 UTC. A new advisory against a
+    # dependency we already ship should surface without waiting for someone
+    # to happen to open a PR.
+    - cron: '0 0 * * 1'
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  supply-chain:
+    name: Dependency & License Policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Prebuilt binary: `cargo install cargo-deny` costs several minutes of
+      # compile time on every run, which a merge-gating check cannot afford.
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      # Covers what `cargo audit` did (RustSec advisories) plus license
+      # compliance, duplicate/banned crates, and untrusted sources. Policy and
+      # any advisory exemptions live in deny.toml so they are reviewable.
+      - name: Run cargo-deny
+        run: cargo deny --workspace --all-features check
+
+  clippy-security-lint:
+    name: Code Security & Clippy Lints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain with clippy
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy
+
+      - name: Run Clippy Checks
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings

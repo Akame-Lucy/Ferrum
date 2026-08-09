@@ -1,0 +1,1996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferrite - Remote Browser & Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+    <style>
+        :root {
+            --bg-black: #050507;
+            --bg-card: #09090c;
+            --bg-panel: #0d0d11;
+            --bg-hover: #16161c;
+            --bg-active: #1e1e26;
+            --border: #1f1f27;
+            --border-light: #2e2e3a;
+            --text-primary: #ffffff;
+            --text-muted: #71717a;
+            --text-subtle: #52525b;
+            --accent-color: #ffffff;
+            --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-black);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background-image: radial-gradient(#181820 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        /* Custom Themed Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-panel);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+            border: 1px solid transparent;
+            background-clip: padding-box;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-subtle);
+        }
+
+        ::-webkit-scrollbar-corner {
+            background: var(--bg-panel);
+        }
+
+        /* Firefox scrollbar */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) var(--bg-panel);
+        }
+
+        header.topbar {
+            height: 52px;
+            background: rgba(9, 9, 12, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 10;
+        }
+
+        .brand {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: color 0.2s ease;
+        }
+
+        .brand-badge {
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: var(--bg-hover);
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+            font-weight: 500;
+            transition: border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .top-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .theme-picker {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mode-toggle {
+            display: flex;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 5px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }
+
+        .mode-btn.active {
+            background: var(--accent-color);
+            color: #000000;
+        }
+
+        .keybind-selector select {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .keybind-selector select:hover {
+            border-color: var(--border-light);
+        }
+
+        .main-layout {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 320px;
+            min-width: 180px;
+            max-width: 700px;
+            flex-shrink: 0;
+            background-color: var(--bg-card);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-resizer {
+            width: 4px;
+            background: transparent;
+            cursor: col-resize;
+            transition: background 0.2s ease;
+            z-index: 100;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .sidebar-resizer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -2px;
+            width: 8px;
+            height: 100%;
+        }
+        .sidebar-resizer:hover, .sidebar-resizer.is-dragging {
+            background: var(--accent-color);
+        }
+
+        body.is-resizing * {
+            user-select: none !important;
+            pointer-events: none !important;
+        }
+        body.is-resizing {
+            cursor: col-resize !important;
+        }
+        body.is-resizing #sidebar-resizer {
+            pointer-events: auto !important;
+        }
+
+        .file-checkbox {
+            margin-right: 6px;
+            cursor: pointer;
+            accent-color: var(--accent-color);
+            display: none;
+        }
+
+        .file-tree.has-selection .file-checkbox {
+            display: inline-block;
+        }
+
+        .file-item.selected {
+            background: var(--bg-hover) !important;
+            border-left: none !important;
+        }
+
+        .git-badge {
+            margin-left: auto;
+            margin-right: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            padding: 1px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+        }
+        .git-badge.git-m { color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
+        .git-badge.git-u { color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .git-badge.git-d { color: #ef4444; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .git-badge.git-a { color: #3b82f6; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); }
+
+        .btn-mini.btn-diff {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            font-size: 8px;
+            padding: 0 4px;
+            cursor: pointer;
+        }
+
+        .git-blame-bar {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            padding: 4px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .git-blame-author { color: var(--accent-color); font-weight: 600; }
+        .git-blame-time { opacity: 0.8; margin-left: 6px; }
+        .git-blame-summary { font-style: italic; opacity: 0.9; margin-left: 8px; }
+
+        #monaco-diff-container {
+            width: 100%;
+            height: 100%;
+            display: none;
+        }
+
+        .bulk-actions-bar {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            font-family: var(--font-mono);
+        }
+        .bulk-actions-bar .bulk-btns {
+            display: flex;
+            gap: 6px;
+        }
+
+        .sidebar-section-title {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-subtle);
+            padding: 12px 16px 6px;
+        }
+
+        .remote-picker {
+            padding: 0 16px 12px;
+        }
+
+        .remote-picker select {
+            width: 100%;
+            background: var(--bg-panel);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .remote-picker select:focus {
+            border-color: var(--accent-color);
+        }
+
+        .search-box {
+            padding: 0 16px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .search-box input[type="text"] {
+            width: 100%;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .search-box input[type="text"]:focus {
+            border-color: var(--accent-color);
+        }
+
+        .search-options {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .search-options label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        .search-options button {
+            background: var(--bg-hover);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .search-options button:hover {
+            background: var(--accent-color);
+            color: #000000;
+        }
+
+        .search-results {
+            max-height: 140px;
+            overflow-y: auto;
+            padding: 0 16px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .search-result-item {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            padding: 6px 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .search-result-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--border-light);
+        }
+
+        .search-result-item .match-path {
+            color: var(--accent-color);
+            font-weight: 500;
+        }
+
+        .search-result-item .match-snippet {
+            color: var(--text-subtle);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .path-bar {
+            padding: 8px 16px 8px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .path-bar input {
+            flex: 1;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .path-bar input:focus {
+            border-color: var(--accent-color);
+        }
+
+        .path-bar button {
+            background: var(--bg-hover);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+            padding: 0 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            transition: all 0.15s ease;
+        }
+
+        .path-bar button:hover {
+            background: var(--accent-color);
+            color: #000000;
+        }
+
+        .tree-actions {
+            display: flex;
+            gap: 4px;
+            padding: 0 16px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tree-actions button {
+            flex: 1;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 5px 6px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .tree-actions button:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--border-light);
+        }
+
+        .file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--text-muted);
+            user-select: none;
+            gap: 8px;
+            font-family: var(--font-mono);
+            transition: background 0.15s ease, color 0.15s ease;
+            margin-bottom: 2px;
+            border: 1px solid transparent;
+            position: relative;
+        }
+
+        .file-item[draggable="true"] {
+            cursor: grab;
+        }
+
+        .file-item[draggable="true"]:active {
+            cursor: grabbing;
+        }
+
+        .file-item:hover {
+            background-color: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--border);
+        }
+
+        .file-item.is-dir {
+            color: var(--accent-color);
+            font-weight: 500;
+        }
+
+        .file-item .tag {
+            font-size: 9px;
+            letter-spacing: 0.5px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-subtle);
+        }
+
+        .file-item.is-dir .tag {
+            color: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+
+        .file-item .name {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-item .actions-mini {
+            display: none;
+            gap: 4px;
+        }
+
+        .file-item:hover .actions-mini {
+            display: flex;
+        }
+
+        .file-item .btn-mini {
+            font-size: 9px;
+            padding: 2px 4px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 3px;
+        }
+
+        .file-item .btn-mini:hover {
+            background: var(--accent-color);
+            color: #000000;
+        }
+
+        /* Tree Fold/Unfold & Indent Styles */
+        .tree-indent-guide {
+            display: inline-block;
+            width: 12px;
+            height: 100%;
+            border-left: 1px dashed var(--border-light);
+            margin-right: 2px;
+        }
+
+        .tree-fold-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            font-size: 9px;
+            color: var(--text-subtle);
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.15s ease, color 0.15s ease;
+            margin-right: 2px;
+        }
+
+        .tree-fold-icon:hover {
+            color: var(--accent-color);
+        }
+
+        .tree-fold-icon.expanded {
+            transform: rotate(90deg);
+        }
+
+        /* SVG Icon Utilities */
+        .icon-svg {
+            display: inline-block;
+            vertical-align: middle;
+            flex-shrink: 0;
+        }
+
+        .tree-fold-svg {
+            display: inline-block;
+            vertical-align: middle;
+            transition: transform 0.15s ease;
+        }
+
+        .tree-fold-icon.expanded .tree-fold-svg {
+            transform: rotate(90deg);
+        }
+
+        /* VS Code Style File Tree Icons & Colors */
+        .btn-subtle-icon {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            padding: 3px 4px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .btn-subtle-icon:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .file-icon-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 6px;
+            flex-shrink: 0;
+        }
+
+        .file-item .name.git-file-m {
+            color: #f59e0b !important;
+            font-weight: 500;
+        }
+
+        .file-item .name.git-file-u {
+            color: #10b981 !important;
+        }
+
+        .file-item .name.git-file-d {
+            color: #ef4444 !important;
+            text-decoration: line-through;
+        }
+
+        .file-item.is-dir .name {
+            font-weight: 500;
+            color: var(--accent-color);
+        }
+
+        .file-item.active {
+            background-color: var(--bg-hover);
+            color: var(--accent-color);
+            border-left: 3px solid var(--accent-color);
+            font-weight: 600;
+        }
+
+        .file-item.selected {
+            background-color: var(--bg-active);
+            border-left: 3px solid var(--accent-color);
+        }
+
+        .editor-header {
+            height: 42px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            gap: 12px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        #active-file-path {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .editor-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Rich Media Previewer & ZIP Inspector CSS */
+        .media-preview-container, .zip-inspector-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #050508;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .media-preview-toolbar, .zip-inspector-header {
+            height: 38px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }
+
+        .media-preview-title {
+            font-weight: 600;
+            color: var(--accent-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .media-preview-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .media-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-muted);
+        }
+
+        .media-preview-viewport {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+            padding: 20px;
+            background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 0);
+            background-size: 16px 16px;
+        }
+
+        .media-preview-viewport img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+            border-radius: 4px;
+            transition: transform 0.2s ease;
+        }
+
+        .media-preview-viewport video {
+            max-width: 95%;
+            max-height: 90%;
+            border-radius: 6px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+            outline: none;
+        }
+
+        .media-preview-viewport audio {
+            width: 80%;
+            max-width: 500px;
+        }
+
+        .media-preview-viewport embed {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .zip-inspector-entries-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .zip-entry-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+
+        .zip-entry-row:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-color);
+        }
+
+        /* Editor Body Layout & Dedicated Workspace Sidebar */
+        .editor-body-layout {
+            flex: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+            background: var(--bg-panel);
+        }
+
+        .editor-workspace-sidebar {
+            width: 250px;
+            min-width: 170px;
+            max-width: 480px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: var(--font-sans);
+            user-select: none;
+            z-index: 4;
+            transition: width 0.15s ease;
+        }
+
+        .editor-workspace-header {
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-panel);
+        }
+
+        .open-editors-panel {
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .open-editors-panel.collapsed .open-editors-list-wrapper {
+            display: none;
+        }
+
+        .open-editors-header {
+            padding: 0 12px;
+            height: 28px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            background: var(--bg-panel);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .open-editors-header:hover {
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+
+        .open-editors-header .section-chevron {
+            display: inline-block;
+            transition: transform 0.15s ease;
+            margin-right: 4px;
+        }
+
+        .open-editors-panel.collapsed .section-chevron {
+            transform: rotate(-90deg);
+        }
+
+        .open-editors-list-wrapper {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .open-editor-item {
+            padding: 0 12px 0 24px;
+            height: 24px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+        }
+
+        .open-editor-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .open-editor-item.active {
+            background: var(--bg-active);
+            color: var(--accent-color);
+        }
+
+        .open-editor-item .close-editor-btn {
+            font-size: 14px;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            opacity: 0;
+            color: var(--text-muted);
+            transition: opacity 0.1s ease, background 0.1s ease;
+            flex-shrink: 0;
+        }
+
+        .open-editor-item:hover .close-editor-btn {
+            opacity: 1;
+        }
+
+        .open-editor-item .close-editor-btn:hover {
+            background: var(--bg-active);
+            color: var(--text-primary);
+        }
+
+        /* Workspace Explorer Section Header */
+        .workspace-tree-header {
+            padding: 0 12px;
+            height: 28px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            background: var(--bg-panel);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .workspace-tree-header:hover {
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+
+        .workspace-tree-header .section-chevron {
+            display: inline-block;
+            transition: transform 0.15s ease;
+            margin-right: 4px;
+        }
+
+        .workspace-tree-panel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+
+        .editor-workspace-resizer {
+            width: 4px;
+            background: transparent;
+            cursor: col-resize;
+            z-index: 5;
+            transition: background 0.2s ease;
+            position: relative;
+        }
+        .editor-workspace-resizer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -2px;
+            width: 8px;
+            height: 100%;
+        }
+
+        .editor-workspace-resizer:hover {
+            background: var(--accent-color);
+        }
+
+        .editor-main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        /* Editor Breadcrumbs Bar */
+        .editor-breadcrumb-bar {
+            height: 28px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .editor-breadcrumb-bar .crumb-item {
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .editor-breadcrumb-bar .crumb-item:hover {
+            color: var(--accent-color);
+            text-decoration: underline;
+        }
+
+        .editor-breadcrumb-bar .crumb-sep {
+            margin: 0 6px;
+            color: var(--text-subtle);
+        }
+
+        /* VS Code Style Bottom Status Bar */
+        .vscode-status-bar {
+            height: 24px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            user-select: none;
+            z-index: 5;
+        }
+
+        .vscode-status-bar .status-left,
+        .vscode-status-bar .status-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .vscode-status-bar .status-item {
+            cursor: pointer;
+        }
+
+        .vscode-status-bar .status-item:hover {
+            color: var(--text-primary);
+        }
+
+        /* Global Search Match Highlight */
+        .global-search-group {
+            margin-bottom: 10px;
+        }
+
+        .global-search-file-header {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-color);
+            padding: 4px 8px;
+            background: var(--bg-hover);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .global-search-match-line {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            padding: 4px 8px 4px 20px;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            display: flex;
+            gap: 10px;
+        }
+
+        .global-search-match-line:hover {
+            background: var(--bg-active);
+            color: var(--text-primary);
+        }
+
+        .global-search-match-line .line-num {
+            color: var(--text-subtle);
+            min-width: 36px;
+        }
+
+        .global-search-match-line .line-snippet {
+            flex: 1;
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .global-search-match-line .match-text {
+            background: rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            border-radius: 2px;
+            padding: 0 3px;
+        }
+
+        /* Drag and Drop Zone Overlay */
+        .drag-drop-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(5, 5, 7, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .drag-drop-modal-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .drag-drop-box {
+            border: 2px dashed var(--accent-color);
+            border-radius: 12px;
+            padding: 40px 60px;
+            text-align: center;
+            background: var(--bg-card);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .editor-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-black);
+            position: relative;
+            transition: border-color 0.15s ease;
+        }
+
+        .editor-pane.drag-over {
+            outline: 2px dashed var(--accent-color);
+            outline-offset: -4px;
+            background-color: var(--bg-hover);
+        }
+
+        .tab-bar {
+            display: flex;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+            min-height: 36px;
+        }
+
+        .tab-item {
+            display: flex;
+            align-items: center;
+            padding: 0 14px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            border-right: 1px solid var(--border);
+            cursor: pointer;
+            gap: 8px;
+            user-select: none;
+            background: var(--bg-card);
+            height: 36px;
+            white-space: nowrap;
+        }
+
+        .tab-item.active {
+            background: var(--bg-black);
+            color: var(--accent-color);
+            border-bottom: 2px solid var(--accent-color);
+        }
+
+        .tab-item .close-tab {
+            font-size: 11px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            color: var(--text-subtle);
+        }
+
+        .tab-item .close-tab:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .status-badge {
+            font-size: 10px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: var(--bg-panel);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.modified {
+            background: #18181b;
+            color: #ffffff;
+            border-color: #ffffff;
+        }
+
+        .status-badge.saved {
+            background: var(--bg-hover);
+            color: var(--text-muted);
+            border-color: var(--border-light);
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: #000000;
+            font-family: var(--font-mono);
+            font-weight: 600;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .btn-subtle {
+            background: var(--bg-panel);
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-weight: 500;
+            border: 1px solid var(--border);
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .btn-subtle:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        #monaco-container {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+
+        #terminal-container {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            padding: 12px;
+            background: #000000;
+            display: none;
+        }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-subtle);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            gap: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 20px;
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+        }
+
+        .modal-title {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+
+        .modal-body {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .dialog-input {
+            width: 100%;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .dialog-input:focus {
+            border-color: var(--accent-color);
+        }
+
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 250;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast-item {
+            pointer-events: auto;
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: toastIn 0.2s ease forwards;
+            cursor: pointer;
+        }
+
+        .toast-item.error {
+            border-color: #7f1d1d;
+            color: #fca5a5;
+            background: #09090c;
+        }
+
+        .toast-item.success {
+            border-color: #2e2e3a;
+            color: #ffffff;
+            background: #09090c;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .context-menu {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 0;
+            min-width: 160px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+            font-size: 12px;
+            font-family: var(--font-sans);
+        }
+        .context-menu-item {
+            padding: 7px 14px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .context-menu-item:hover {
+            background: var(--bg-hover);
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">FERRITE <span class="brand-badge">Engine</span></div>
+        <div class="top-controls">
+            <div class="theme-picker">
+                <label for="theme-color-input" style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Theme Accent</label>
+                <input type="color" id="theme-color-input" value="#3b82f6" style="background: transparent; border: 1px solid var(--border); width: 26px; height: 24px; border-radius: 4px; cursor: pointer; padding: 0;">
+            </div>
+            <div class="keybind-selector">
+                <select id="keybind-select">
+                    <option value="default">Keybindings: Default</option>
+                    <option value="vim">Keybindings: Vim</option>
+                </select>
+            </div>
+            <button id="btn-gitlens" class="btn-subtle" style="font-size: 11px; color: var(--accent-color); font-weight: 600;" title="Open GitLens Control Center (Ctrl+Shift+G)">GitLens</button>
+            <button id="btn-global-search" class="btn-subtle" style="font-size: 11px;" title="Full-Text Global Search (Ctrl+Shift+F)">Global Search</button>
+            <button id="btn-settings" class="btn-subtle" style="font-size: 11px;">Settings</button>
+            <div class="mode-toggle">
+                <button class="mode-btn active" id="btn-mode-editor">Editor</button>
+                <button class="mode-btn" id="btn-mode-terminal">Terminal</button>
+                <button class="mode-btn" id="btn-term-reconnect" title="Open a new SSH session to the selected remote">Reconnect SSH</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Remote Connection</span>
+                <button id="btn-add-remote" style="background: var(--bg-hover); border: 1px solid var(--border-light); color: var(--text-primary); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 9px; cursor: pointer;">+ Add</button>
+            </div>
+            <div class="remote-picker">
+                <select id="remote-select">
+                    <option value="">Loading remotes...</option>
+                </select>
+            </div>
+
+            <div class="sidebar-section-title">Remote Search</div>
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Search file name or text...">
+                <div class="search-options">
+                    <label><input type="checkbox" id="search-content-check"> Content Search</label>
+                    <button id="search-btn">Search</button>
+                </div>
+            </div>
+            <div class="search-results" id="search-results"></div>
+
+            <div class="sidebar-section-title" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">
+                <span id="explorer-title">Explorer</span>
+                <div style="display: flex; gap: 2px; align-items: center;">
+                    <button id="btn-new-file" class="btn-subtle-icon" title="New File"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg></button>
+                    <button id="btn-new-folder" class="btn-subtle-icon" title="New Folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg></button>
+                    <button id="btn-refresh-dir" class="btn-subtle-icon" title="Refresh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
+                    <button id="btn-expand-all" class="btn-subtle-icon" title="Expand All Folders"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg></button>
+                    <button id="btn-collapse-all" class="btn-subtle-icon" title="Collapse All Folders"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg></button>
+                </div>
+            </div>
+            <div class="path-bar">
+                <input type="text" id="path-input" value="/" placeholder="/path/to/dir">
+                <button id="go-btn">Go</button>
+            </div>
+            <div class="tree-actions">
+                <button id="btn-upload-file">Upload Files</button>
+                <input type="file" id="hidden-file-input" style="display: none;" multiple>
+            </div>
+            <div id="bulk-actions-bar" class="bulk-actions-bar" style="display: none;">
+                <span id="bulk-count-label">0 selected</span>
+                <div class="bulk-btns">
+                    <button id="btn-bulk-download" class="btn-subtle" style="font-size: 10px;">Zip Download</button>
+                    <button id="btn-bulk-delete" class="btn-subtle" style="font-size: 10px; color: #ef4444;">Delete</button>
+                    <button id="btn-bulk-clear" class="btn-subtle" style="font-size: 10px;">Clear</button>
+                </div>
+            </div>
+            <div class="file-tree" id="file-tree">
+                <div class="empty-state">Select a remote connection</div>
+            </div>
+        </aside>
+
+        <div class="sidebar-resizer" id="sidebar-resizer"></div>
+
+        <main class="editor-pane">
+            <div class="tab-bar" id="tab-bar"></div>
+            <div class="editor-header" id="editor-header-bar">
+                <div class="file-info" style="display: flex; align-items: center; gap: 10px;">
+                    <span id="active-file-path">No file active</span>
+                    <span class="status-badge" id="status-badge" style="display:none;">Saved</span>
+                    <div id="collab-users-list" style="display: flex; align-items: center; gap: 4px;" title="Active Live Collaborators"></div>
+                </div>
+                <div class="editor-actions">
+                    <button class="btn-subtle" id="btn-toggle-ws-sidebar" style="font-size: 10px;" title="Toggle Workspace Sidebar (Ctrl+B)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> Workspace</button>
+                    <button class="btn-subtle" id="btn-toggle-diff" style="font-size: 10px; display: none;">View Git Diff</button>
+                    <button class="btn-primary" id="save-btn" disabled>Save (Ctrl+S)</button>
+                </div>
+            </div>
+            <div id="editor-breadcrumb-bar" class="editor-breadcrumb-bar">
+                <span id="breadcrumb-content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg" style="margin-right: 4px; vertical-align: text-bottom;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Select a file to edit</span>
+            </div>
+            <div class="editor-body-layout">
+                <aside id="editor-workspace-sidebar" class="editor-workspace-sidebar">
+                    <div class="editor-workspace-header">
+                        <span id="editor-ws-title">Workspace: /</span>
+                        <div style="display: flex; gap: 2px;">
+                            <button id="btn-ws-close" class="btn-subtle-icon" title="Close Workspace & All Open Files"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                            <button id="btn-ws-collapse-all" class="btn-subtle-icon" title="Collapse All Folders"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg></button>
+                            <button id="btn-ws-toggle-hide" class="btn-subtle-icon" title="Toggle Workspace Sidebar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg></button>
+                        </div>
+                    </div>
+                    <div class="open-editors-panel" id="open-editors-panel">
+                        <div class="open-editors-header" id="open-editors-toggle">
+                            <div style="display: flex; align-items: center;">
+                                <svg class="section-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                <span>Open Editors</span>
+                            </div>
+                            <span id="open-editors-count" style="font-size: 9px; opacity: 0.6;">0</span>
+                        </div>
+                        <div class="open-editors-list-wrapper" id="open-editors-list-wrapper">
+                            <div id="open-editors-list"></div>
+                        </div>
+                    </div>
+                    <div class="workspace-tree-header" id="workspace-tree-toggle">
+                        <div style="display: flex; align-items: center;">
+                            <svg class="section-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            <span>Explorer</span>
+                        </div>
+                    </div>
+                    <div id="workspace-file-tree" class="workspace-tree-panel">
+                        <div class="empty-state" style="padding: 12px; font-size: 11px;">Right click a folder and select 'Open Folder in Editor' to open a workspace</div>
+                    </div>
+                </aside>
+                <div class="editor-workspace-resizer" id="editor-workspace-resizer"></div>
+                <div class="editor-main-area">
+                    <div id="monaco-container"></div>
+                    <div id="monaco-diff-container"></div>
+                    <div id="media-preview-container" class="media-preview-container" style="display: none;">
+                        <div class="media-preview-toolbar">
+                            <div class="media-preview-title" id="media-preview-title">media.png</div>
+                            <div class="media-preview-controls">
+                                <span id="media-dimensions-badge" class="media-badge">0 × 0 px</span>
+                                <span id="media-size-badge" class="media-badge">0 KB</span>
+                                <button id="btn-media-zoom-in" class="btn-subtle" style="padding: 2px 8px;" title="Zoom In">+</button>
+                                <button id="btn-media-zoom-out" class="btn-subtle" style="padding: 2px 8px;" title="Zoom Out">-</button>
+                                <button id="btn-media-zoom-reset" class="btn-subtle" style="padding: 2px 8px;" title="Reset Zoom">100%</button>
+                            </div>
+                        </div>
+                        <div class="media-preview-viewport" id="media-preview-viewport"></div>
+                    </div>
+                    <div id="zip-inspector-container" class="zip-inspector-container" style="display: none;">
+                        <div class="zip-inspector-header">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                                <span style="font-weight: 700; font-size: 13px;" id="zip-inspector-title">Archive Inspector</span>
+                            </div>
+                            <span id="zip-inspector-count-badge" class="media-badge">0 entries</span>
+                        </div>
+                        <div id="zip-inspector-entries-list" class="zip-inspector-entries-list">
+                            <div class="empty-state">Loading archive contents...</div>
+                        </div>
+                    </div>
+                    <div id="terminal-container"></div>
+                    <div id="git-blame-bar" class="git-blame-bar" style="display: none;">
+                        <div>
+                            <span id="blame-author" class="git-blame-author">--</span>
+                            <span id="blame-time" class="git-blame-time">--</span>
+                            <span id="blame-summary" class="git-blame-summary">--</span>
+                        </div>
+                        <span id="blame-hash" style="font-family: var(--font-mono); font-size: 9px; opacity: 0.7;">#000000</span>
+                    </div>
+                </div>
+            </div>
+            <footer class="vscode-status-bar" id="vscode-status-bar">
+                <div class="status-left">
+                    <span id="status-git-branch" class="status-item"><span style="color: var(--accent-color);">git:</span> <span id="status-branch-name">main</span></span>
+                    <span id="status-git-counts" class="status-item" title="Git status counts">[0 M, 0 U]</span>
+                    <span id="vim-status-node" class="status-item" style="display: none; color: var(--accent-color); font-weight: 600; padding: 0 6px; background: var(--bg-hover); border-radius: 3px; font-family: var(--font-mono);"></span>
+                </div>
+                <div class="status-right">
+                    <span id="status-cursor-pos" class="status-item">Ln 1, Col 1</span>
+                    <span id="status-indent" class="status-item">Spaces: 4</span>
+                    <span id="status-encoding" class="status-item">UTF-8</span>
+                    <span id="status-language" class="status-item">plaintext</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <div id="global-search-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card" style="width: 720px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <span style="font-weight: 700; font-size: 13px;">Global Workspace Search</span>
+                </div>
+                <button id="global-search-close-btn" class="btn-subtle-icon" style="font-size: 16px;">×</button>
+            </div>
+            <div style="padding: 14px 0; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="global-search-query-input" placeholder="Search text across all workspace files (Ctrl+Shift+F)..." style="flex: 1; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-primary); padding: 8px 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; outline: none;">
+                    <button id="global-search-exec-btn" class="btn-primary" style="padding: 8px 16px;">Search</button>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);">
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="gs-case-sensitive"> Match Case (Aa)</label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="gs-is-regex"> Regular Expression (.*)</label>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="gs-includes" placeholder="Include (e.g. *.rs)" style="width: 120px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-primary); padding: 3px 8px; border-radius: 4px; font-size: 10px;">
+                        <input type="text" id="gs-excludes" placeholder="Exclude (e.g. target)" style="width: 120px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-primary); padding: 3px 8px; border-radius: 4px; font-size: 10px;">
+                    </div>
+                </div>
+            </div>
+            <div id="global-search-results-list" style="flex: 1; overflow-y: auto; padding: 12px 0; display: flex; flex-direction: column; gap: 6px;">
+                <div class="empty-state">Type a search query and press Enter or click Search</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="git-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 540px; max-height: 80vh; display: flex; flex-direction: column;">
+            <div class="modal-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Git Workspace Changes (<span id="git-modal-branch" style="color: var(--accent-color);">main</span>)</span>
+                <button id="git-modal-close-x" style="background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer;">&times;</button>
+            </div>
+            <div id="git-modal-body" style="overflow-y: auto; max-height: 380px; display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                <div class="empty-state">No modified or untracked files detected</div>
+            </div>
+            <div class="modal-actions" style="margin-top: 14px;">
+                <button id="git-modal-close-btn" class="btn-subtle" style="width: 100%;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="diff-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <div class="modal-title">Conflict Detected</div>
+            <div class="modal-body">The remote file was modified externally since loading. Would you like to overwrite it with your local changes?</div>
+            <div class="modal-actions">
+                <button id="diff-cancel-btn" class="btn-subtle">Cancel</button>
+                <button id="diff-overwrite-btn" class="btn-primary">Overwrite</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="remote-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 440px;">
+            <div class="modal-title">Configure Remote Connection</div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Connection Name</label>
+                    <input type="text" id="remote-form-name" class="dialog-input" placeholder="e.g. production-sftp">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <div style="flex: 1;">
+                        <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Protocol</label>
+                        <select id="remote-form-protocol" class="dialog-input" style="height: 34px;">
+                            <option value="sftp">SFTP</option>
+                            <option value="ftp">FTP</option>
+                            <option value="webdav">WebDAV</option>
+                            <option value="s3">S3</option>
+                            <option value="local">Local</option>
+                        </select>
+                    </div>
+                    <div style="flex: 2;">
+                        <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Host</label>
+                        <input type="text" id="remote-form-host" class="dialog-input" placeholder="192.168.1.100 or domain">
+                    </div>
+                    <div style="width: 70px;">
+                        <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Port</label>
+                        <input type="number" id="remote-form-port" class="dialog-input" value="22">
+                    </div>
+                </div>
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Username / Access Key</label>
+                    <input type="text" id="remote-form-username" class="dialog-input" placeholder="root or username">
+                </div>
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Password / Secret Key</label>
+                    <input type="password" id="remote-form-password" class="dialog-input" placeholder="Password or Secret Key">
+                </div>
+                <div id="remote-form-s3-fields" style="display: none; flex-direction: column; gap: 10px;">
+                    <div>
+                        <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Bucket Name</label>
+                        <input type="text" id="remote-form-bucket" class="dialog-input" placeholder="my-bucket">
+                    </div>
+                    <div>
+                        <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Region</label>
+                        <input type="text" id="remote-form-region" class="dialog-input" placeholder="us-east-1">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top: 10px;">
+                <button id="remote-modal-cancel-btn" class="btn-subtle">Cancel</button>
+                <button id="remote-modal-save-btn" class="btn-primary">Save Remote</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="custom-dialog-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <div class="modal-title" id="custom-dialog-title">Dialog</div>
+            <div class="modal-body" id="custom-dialog-body">Message</div>
+            <input type="text" id="custom-dialog-input" class="dialog-input" style="display:none;">
+            <div class="modal-actions">
+                <button id="custom-dialog-cancel-btn" class="btn-subtle">Cancel</button>
+                <button id="custom-dialog-confirm-btn" class="btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="login-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 380px;">
+            <div class="modal-title">Ferrite Login</div>
+            <div class="modal-body">Authentication required. Please enter your credentials.</div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Username</label>
+                    <input type="text" id="login-username" class="dialog-input" placeholder="Username">
+                </div>
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Password</label>
+                    <input type="password" id="login-password" class="dialog-input" placeholder="Password">
+                </div>
+                <div id="login-totp-group" style="display: none;">
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">TOTP Code (Optional / Required if enabled)</label>
+                    <input type="text" id="login-totp" class="dialog-input" placeholder="6-digit code">
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top: 10px;">
+                <button id="login-submit-btn" class="btn-primary" style="width: 100%;">Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="context-menu" class="context-menu" style="display: none; position: fixed; z-index: 10000;">
+        <div class="context-menu-item" id="ctx-open-workspace" style="font-weight: 600; color: var(--accent-color);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg" style="margin-right: 6px; vertical-align: -2px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Open Folder in Editor</div>
+        <div class="context-menu-item" id="ctx-download">Download File</div>
+        <div class="context-menu-item" id="ctx-bulk-download" style="display: none;">Download Selected (ZIP)</div>
+        <div class="context-menu-item" id="ctx-toggle-select">Select / Deselect Item</div>
+        <div class="context-menu-item" id="ctx-select-all">Select All Items</div>
+        <div class="context-menu-item" id="ctx-clear-select">Clear Selection</div>
+        <div class="context-menu-item" id="ctx-copy-path">Copy Path</div>
+        <div class="context-menu-item" id="ctx-duplicate">Duplicate</div>
+        <div class="context-menu-item" id="ctx-rename">Rename</div>
+        <div class="context-menu-item" id="ctx-delete" style="color: #ef4444;">Delete</div>
+        <div class="context-menu-item" id="ctx-bulk-delete" style="color: #ef4444; display: none;">Delete Selected</div>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 420px;">
+            <div class="modal-title">Ferrite Settings</div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div style="font-size: 12px; font-weight: 600; color: var(--accent-color);">Change Admin Password</div>
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Current Password (if set)</label>
+                    <input type="password" id="settings-curr-pass" class="dialog-input" placeholder="Current password">
+                </div>
+                <div>
+                    <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">New Password</label>
+                    <input type="password" id="settings-new-pass" class="dialog-input" placeholder="New password (min 4 chars)">
+                </div>
+                <div id="settings-manage-users-section" style="display: none; border-top: 1px solid var(--border); padding-top: 14px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--accent-color); margin-bottom: 8px;">User Management</div>
+                    <button id="settings-manage-users-btn" class="btn-subtle" style="width: 100%;">Manage Users</button>
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top: 16px;">
+                <button id="settings-cancel-btn" class="btn-subtle">Cancel</button>
+                <button id="settings-save-btn" class="btn-primary">Update Password</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="users-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 640px; max-width: 92vw; max-height: 84vh;">
+            <div class="modal-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Manage Users</span>
+                <span id="users-modal-close-x" style="cursor: pointer; color: var(--text-muted); font-size: 18px; line-height: 1;">&times;</span>
+            </div>
+            <div style="display: flex; gap: 16px; min-height: 0; flex: 1; overflow: hidden;">
+                <div style="width: 170px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; border-right: 1px solid var(--border); padding-right: 12px;">
+                    <button id="users-new-btn" class="btn-subtle" style="width: 100%;">+ New User</button>
+                    <div id="users-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-width: 0;">
+                    <div id="users-form-empty" class="empty-state" style="flex: none; padding: 30px 0;">Select a user or create a new one</div>
+                    <div id="users-form" style="display: none; flex-direction: column; gap: 10px;">
+                        <div>
+                            <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Username</label>
+                            <input type="text" id="users-form-username" class="dialog-input" placeholder="username">
+                        </div>
+                        <div>
+                            <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Password <span id="users-form-password-hint" style="color: var(--text-subtle);"></span></label>
+                            <input type="password" id="users-form-password" class="dialog-input" placeholder="Password">
+                        </div>
+                        <div style="display: flex; gap: 14px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 4px;">Role</label>
+                                <select id="users-form-role" class="dialog-input" style="height: 34px;">
+                                    <option value="user">User</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                            <label style="display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); height: 34px;">
+                                <input type="checkbox" id="users-form-allow-shell"> Allow Terminal
+                            </label>
+                            <label id="users-form-enabled-wrap" style="display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); height: 34px;">
+                                <input type="checkbox" id="users-form-enabled" checked> Enabled
+                            </label>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <label style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">Folder Permissions</label>
+                                <button id="users-perm-add-btn" class="btn-subtle" style="padding: 2px 8px; font-size: 9px;">+ Add</button>
+                            </div>
+                            <div id="users-perm-rows" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                            <div style="font-size: 10px; color: var(--text-subtle); margin-top: 6px; line-height: 1.4;">Admins bypass permissions and see every remote. Standard users only see remotes and folders granted here &mdash; path "/" grants the whole remote.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="users-delete-btn" class="btn-subtle" style="color: #ef4444; display: none; margin-right: auto;">Delete User</button>
+                <button id="users-modal-cancel-btn" class="btn-subtle">Close</button>
+                <button id="users-save-btn" class="btn-primary" style="display: none;">Save Changes</button>
+                <button id="users-create-btn" class="btn-primary" style="display: none;">Create User</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Search Modal -->
+    <div id="global-search-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 720px; max-width: 92vw; height: 80vh; max-height: 700px; display: flex; flex-direction: column; padding: 20px;">
+            <div class="modal-title" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">Full-Text Global Search</span>
+                    <span style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); background: var(--bg-hover); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);">Ctrl+Shift+F</span>
+                </div>
+                <span id="global-search-close-x" style="cursor: pointer; color: var(--text-muted); font-size: 18px; line-height: 1;">&times;</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="global-search-input" class="dialog-input" placeholder="Type text query, word, or regex..." style="flex: 1; font-size: 13px;">
+                    <button id="global-search-btn" class="btn-primary" style="padding: 0 18px; font-weight: 600;">Search</button>
+                </div>
+                <div style="display: flex; gap: 16px; align-items: center; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);">
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="global-search-case"> Match Case</label>
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="global-search-regex"> Use Regex</label>
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="global-search-content" checked> Content Search</label>
+                </div>
+                <div style="display: flex; gap: 10px; font-size: 11px; font-family: var(--font-mono);">
+                    <div style="flex: 1;">
+                        <label style="color: var(--text-muted); display: block; margin-bottom: 2px;">Include Files (e.g. *.rs, *.js)</label>
+                        <input type="text" id="global-search-includes" class="dialog-input" placeholder="e.g. *.rs, *.js, *.html" style="font-size: 11px; padding: 4px 8px;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="color: var(--text-muted); display: block; margin-bottom: 2px;">Exclude Files</label>
+                        <input type="text" id="global-search-excludes" class="dialog-input" placeholder="e.g. target/*, node_modules/*" style="font-size: 11px; padding: 4px 8px;">
+                    </div>
+                </div>
+            </div>
+            <div id="global-search-summary" style="margin-top: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-color);"></div>
+            <div id="global-search-results-list" style="margin-top: 8px; flex: 1; overflow-y: auto; background: var(--bg-black); border: 1px solid var(--border); border-radius: 6px; padding: 8px;">
+                <div class="empty-state">Press Enter or click Search to scan files across the workspace</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GitLens Control Center Modal -->
+    <div id="gitlens-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 840px; max-width: 94vw; height: 85vh; max-height: 750px; display: flex; flex-direction: column; padding: 20px;">
+            <div class="modal-title" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg"><circle cx="12" cy="12" r="4"></circle><line x1="1.05" y1="12" x2="7" y2="12"></line><line x1="17" y1="12" x2="22.95" y2="12"></line></svg>
+                    <span style="font-weight: 700; font-size: 14px;">GitLens Control Center</span>
+                    <span id="gitlens-modal-branch" style="font-size: 11px; font-family: var(--font-mono); color: var(--accent-color); background: var(--bg-hover); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border);">main</span>
+                </div>
+                <span id="gitlens-modal-close-x" style="cursor: pointer; color: var(--text-muted); font-size: 20px; line-height: 1;">&times;</span>
+            </div>
+
+            <!-- GitLens Tab Navigation -->
+            <div style="display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 12px; font-family: var(--font-mono); font-size: 11px;">
+                <button id="gl-tab-changes" class="btn-subtle active" style="padding: 4px 10px;">Changes & Commit</button>
+                <button id="gl-tab-history" class="btn-subtle" style="padding: 4px 10px;">Repo History</button>
+                <button id="gl-tab-file-history" class="btn-subtle" style="padding: 4px 10px;">File History</button>
+                <button id="gl-tab-branches" class="btn-subtle" style="padding: 4px 10px;">Branches</button>
+            </div>
+
+            <!-- Tab 1: Changes & Commit -->
+            <div id="gl-view-changes" class="gitlens-view" style="display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text" id="gitlens-commit-msg" class="dialog-input" placeholder="Commit message (e.g. feat: add new feature)..." style="flex: 1; font-size: 12px;">
+                    <button id="btn-gitlens-commit" class="btn-primary" style="padding: 6px 16px; font-weight: 600; font-size: 11px;">Commit All (Ctrl+Enter)</button>
+                </div>
+                <div id="gitlens-changes-list" style="flex: 1; overflow-y: auto; background: var(--bg-black); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
+                    <div class="empty-state">No changed files detected</div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Repo History Timeline -->
+            <div id="gl-view-history" class="gitlens-view" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                <div id="gitlens-history-list" style="flex: 1; overflow-y: auto; background: var(--bg-black); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
+                    <div class="empty-state">Loading repository commits...</div>
+                </div>
+            </div>
+
+            <!-- Tab 3: File History Timeline -->
+            <div id="gl-view-file-history" class="gitlens-view" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                <div id="gitlens-file-history-title" style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-color); margin-bottom: 6px;">Active File Commits</div>
+                <div id="gitlens-file-history-list" style="flex: 1; overflow-y: auto; background: var(--bg-black); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
+                    <div class="empty-state">Select an open file to view commit history</div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Branches -->
+            <div id="gl-view-branches" class="gitlens-view" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                <div id="gitlens-branches-list" style="flex: 1; overflow-y: auto; background: var(--bg-black); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
+                    <div class="empty-state">Loading branches...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drag & Drop Zone Modal Overlay -->
+    <div id="drag-drop-modal-overlay" class="drag-drop-modal-overlay">
+        <div class="drag-drop-box">
+            <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="icon-svg"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </div>
+            <div style="font-weight: 600; font-size: 16px; color: var(--text-primary);">Drop Files to Upload</div>
+            <div style="font-size: 12px; font-family: var(--font-mono); color: var(--text-muted);">Target Directory: <span id="drag-drop-target-path" style="color: var(--accent-color);">/</span></div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
+

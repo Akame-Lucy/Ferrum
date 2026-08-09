@@ -1,0 +1,57 @@
+name: Feature request
+description: Propose a capability Ferrum does not have yet
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        What are you trying to do that Ferrum makes hard or impossible today?
+        Describe the situation, not the solution - it often changes the answer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: The change you would make, roughly.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where it belongs
+      options:
+        - Ferrite (client / web UI / control plane)
+        - Ferrous (server agent)
+        - ferrum-core (shared traits, config, Noise transport)
+        - A new backend behind the RemoteFilesystem trait
+        - Packaging / deployment
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, or solving it outside Ferrum.
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security implications
+      description: |
+        Ferrum brokers filesystem and shell access. Does this widen what a
+        client can reach, add a new trust boundary, or introduce a dependency
+        that handles credentials?
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to implement this myself.

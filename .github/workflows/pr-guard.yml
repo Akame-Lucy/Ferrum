@@ -1,0 +1,188 @@
+name: PR File Guard
+
+# Fail-safe checks that run against the PR's metadata and file list rather than
+# its code: protected paths, oversized blobs, and a machine-readable title.
+#
+# Deliberately triggered by `pull_request`, never `pull_request_target`: a PR
+# from a fork must not get a write-scoped token just by being opened.
+
+on:
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: pr-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  file-guard:
+    name: Protected-path guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check changed files against protected paths
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Paths that must NEVER be committed. Keep in sync with .gitignore.
+            const rules = [
+              { re: /(^|\/)ferrite\.yaml$/i,         why: "active ferrite.yaml contains credentials (use ferrite.example.yaml)" },
+              { re: /(^|\/)ferrous\.yaml$/i,         why: "active ferrous.yaml contains secrets (use ferrous.example.yaml)" },
+              { re: /.*_identity\.key$/i,            why: "private Noise identity keys must never be committed" },
+              { re: /\.(pem|key|crt|p12|pfx)$/i,      why: "SSL/TLS private keys and certificates must not be committed" },
+              { re: /(^|\/)id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$/i, why: "SSH private/public keypairs must never be committed" },
+              { re: /(^|\/)\.env(\..*)?$/i,          why: "environment secret files must not be tracked" },
+              { re: /(^|\/)\.aws\//i,                why: "AWS cloud credentials directory must not be tracked" },
+              { re: /(^|\/)\.netrc$/i,               why: "netrc login credentials must not be tracked" },
+              { re: /(^|\/)target\//i,               why: "build target outputs must not be tracked" },
+              { re: /(^|\/)\.target_build\//i,       why: "target build artifacts must not be tracked" },
+              { re: /(^|\/)dist\//i,                 why: "release archives must be generated via CI/CD, not committed" },
+              { re: /(^|\/)\.cargo\//i,              why: "local cargo credentials/caches must stay untracked" },
+              { re: /(^|\/)\.gemini\//i,             why: "AI workspace directories must stay local" },
+              { re: /(^|\/)\.claude\//i,             why: "AI workspace directories must stay local" },
+              { re: /(^|\/)\.agents\//i,             why: "AI agent directories must stay local" },
+              { re: /(^|\/)Thumbs\.db$/i,            why: "OS thumbnail caches must not be tracked" },
+              { re: /(^|\/)\.DS_Store$/i,            why: "macOS metadata files must not be tracked" }
+            ];
+
+            // Explicitly allowed templates:
+            const allow = [
+              /(^|\/)ferrite\/config\/ferrite\.example\.yaml$/i,
+              /(^|\/)ferrous\/config\/ferrous\.example\.yaml$/i
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const violations = [];
+            for (const f of files) {
+              const p = f.filename;
+              if (allow.some(a => a.test(p))) continue;
+              const hit = rules.find(r => r.re.test(p));
+              if (hit) violations.push(`- \`${p}\` -> ${hit.why}`);
+            }
+
+            if (violations.length) {
+              core.summary
+                .addHeading("Protected paths touched")
+                .addRaw("This PR modifies files that are never allowed in the repository:\n\n" + violations.join("\n"))
+                .addRaw("\n\nRemove them from the PR (`git rm --cached <file>` + amend/new commit) and push again.")
+                .write();
+              core.setFailed(`Blocked: ${violations.length} protected file(s) in this PR:\n${violations.join("\n")}`);
+            } else {
+              core.info(`Check passed: ${files.length} changed file(s) checked - no protected paths touched.`);
+            }
+
+  title-guard:
+    name: PR title guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a Conventional Commits PR title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Squash-merging writes the PR title into main's history verbatim,
+            // so the title is the commit message and has to earn that role.
+            const types = [
+              "feat", "fix", "docs", "style", "refactor",
+              "perf", "test", "build", "ci", "chore", "revert", "security"
+            ];
+            const pattern = new RegExp(
+              `^(${types.join("|")})(\\([a-z0-9._\\/-]+\\))?!?: .+$`
+            );
+
+            const title = context.payload.pull_request.title.trim();
+            const problems = [];
+
+            if (!pattern.test(title)) {
+              problems.push(
+                `Title must start with one of \`${types.join("`, `")}\`, ` +
+                "an optional \`(scope)\`, an optional \`!\` for a breaking change, " +
+                "then \`: \` and a summary."
+              );
+            }
+            if (title.length > 72) {
+              problems.push(`Title is ${title.length} characters; keep it to 72 so \`git log --oneline\` stays readable.`);
+            }
+            if (/\.$/.test(title)) {
+              problems.push("Drop the trailing period - commit subjects do not take one.");
+            }
+
+            if (problems.length) {
+              core.summary
+                .addHeading("PR title needs a fix")
+                .addRaw(`Current title:\n\n> ${title}\n\n`)
+                .addRaw(problems.map(p => `- ${p}`).join("\n"))
+                .addRaw("\n\nExamples:\n\n```\nfix(ferrite-core): stop SFTP reads from blocking the runtime\nfeat(ferrous): add per-client capability expiry\ndocs: document branch protection setup\n```")
+                .addRaw("\n\nEdit the PR title - no push needed, this check re-runs on its own.")
+                .write();
+              core.setFailed(problems.join(" "));
+            } else {
+              core.info(`Title OK: ${title}`);
+            }
+
+  size-guard:
+    name: PR size guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block oversized files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Git keeps every blob forever. A binary committed once stays in
+            // every clone of the repo for good, so this is cheaper to catch here
+            // than to rewrite history for later.
+            const MAX_FILE_BYTES = 5 * 1024 * 1024;
+            const LARGE_DIFF_LINES = 2000;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const oversized = [];
+            let changedLines = 0;
+
+            for (const f of files) {
+              changedLines += (f.additions || 0) + (f.deletions || 0);
+              if (f.status === "removed") continue;
+              // The API omits `patch` for binary files; size has to come from
+              // the blob itself in that case.
+              if (f.patch) continue;
+              const { data: blob } = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: f.filename,
+                ref: context.payload.pull_request.head.sha,
+              }).catch(() => ({ data: null }));
+              if (blob && blob.size > MAX_FILE_BYTES) {
+                const mb = (blob.size / 1024 / 1024).toFixed(1);
+                oversized.push(`- \`${f.filename}\` -> ${mb} MB (limit 5 MB)`);
+              }
+            }
+
+            if (changedLines > LARGE_DIFF_LINES) {
+              core.warning(
+                `This PR touches ${changedLines} lines. Large PRs are hard to review carefully - ` +
+                "consider splitting it if the changes are separable."
+              );
+            }
+
+            if (oversized.length) {
+              core.summary
+                .addHeading("Oversized files")
+                .addRaw("Binary assets this large belong in a release artifact, not in git history:\n\n" + oversized.join("\n"))
+                .write();
+              core.setFailed(`Blocked: ${oversized.length} file(s) over the 5 MB limit.`);
+            } else {
+              core.info(`Check passed: ${files.length} file(s), ${changedLines} changed line(s).`);
+            }

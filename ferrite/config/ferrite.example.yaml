@@ -1,0 +1,56 @@
+# Example Ferrite configuration: copy to ferrite.yaml and edit.
+# See ferrite/README.md for the full reference.
+
+bind: "127.0.0.1:8080"
+
+server_auth:
+  enabled: false
+  username: "admin"
+  password_hash: ""          # generate with: ferrite hash-password
+  totp_secret: null
+
+tls:
+  enabled: false
+  cert_path: null
+  key_path: null
+
+remotes:
+  # Browse local files on the machine Ferrite runs on (no network server needed).
+  - name: this-pc
+    protocol: local
+    host: localhost
+    port: 0
+    username: local
+    base_path: ""
+    auth:
+      password: ""
+
+  # SFTP example: set host/port/username and your credentials.
+  - name: my-sftp-server
+    protocol: sftp
+    host: 192.168.1.100
+    port: 22
+    username: your-user
+    auth:
+      # Prefer key auth; set private_key_path instead of password.
+      # private_key_path: "~/.ssh/id_ed25519"
+      password: ""           # set your SFTP password here
+
+  # FTP example.
+  - name: my-ftp-server
+    protocol: ftp
+    host: 192.168.1.200
+    port: 21
+    username: your-user
+    auth:
+      password: ""           # set your FTP password here
+
+# Terminal remote: the interactive shell connects to this.
+# terminal:
+#   name: terminal-ssh
+#   protocol: sftp
+#   host: 192.168.1.100
+#   port: 22
+#   username: your-user
+#   auth:
+#     private_key_path: "~/.ssh/id_ed25519"

@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # Rust dependencies for the whole workspace (one manifest resolves all
+  # member crates through the root Cargo.toml).
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+    open-pull-requests-limit: 5
+    # Without grouping, a weekly run against a tree this size opens a wall of
+    # single-crate PRs that each need a full CI matrix.
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "build"
+      include: scope
+    labels:
+      - dependencies
+      - rust
+
+  # Pinned action versions go stale silently and are a real supply-chain
+  # surface, since every workflow here runs them with a repo token.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - github-actions

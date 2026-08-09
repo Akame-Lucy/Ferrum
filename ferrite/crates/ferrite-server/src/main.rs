@@ -1,0 +1,290 @@
+mod api;
+mod auth;
+mod permissions;
+
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use axum::{
+    body::Body,
+    http::{header, StatusCode, Uri},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{delete, get, post, put},
+    Router,
+};
+use clap::{Parser, Subcommand};
+use rust_embed::RustEmbed;
+use tower_cookies::CookieManagerLayer;
+use tower_http::cors::CorsLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use api::{
+    auth_status, change_password_handler, collab_ws_handler, copy_entry, create_directory,
+    create_file, create_user, delete_entry, delete_user, download_file, download_zip,
+    events_ws_handler, get_settings, git_blame, git_branches, git_checkout, git_commit, git_diff,
+    git_history, git_revert, git_stage, git_status, git_unstage, global_search, list_files,
+    list_remotes, list_users, login_handler, logout_handler, read_file, rename_entry,
+    save_settings, search_files, terminal_ws_handler, update_user, upload_file, upsert_remote,
+    write_file, zip_extract_entry, zip_inspect, AppState,
+};
+use ferrite_core::Config;
+
+#[derive(RustEmbed)]
+#[folder = "../../frontend/"]
+struct Assets;
+
+#[derive(Parser)]
+#[command(name = "ferrite")]
+#[command(version = ferrum_core::FULL_VERSION_INFO)]
+#[command(about = "Self-hosted remote file browser and editor")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    #[arg(short, long, global = true, default_value = "ferrite.yaml")]
+    config: PathBuf,
+
+    #[arg(short, long, global = true, default_value = "127.0.0.1:8080")]
+    bind: String,
+
+    #[arg(long, global = true)]
+    tls_cert: Option<PathBuf>,
+
+    #[arg(long, global = true)]
+    tls_key: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Serve {
+        #[arg(short, long, default_value = "ferrite.yaml")]
+        config: PathBuf,
+
+        #[arg(short, long, default_value = "127.0.0.1:8080")]
+        bind: String,
+
+        #[arg(long)]
+        tls_cert: Option<PathBuf>,
+
+        #[arg(long)]
+        tls_key: Option<PathBuf>,
+    },
+    HashPassword {
+        #[arg(help = "Plain text password to hash using Argon2id")]
+        password: String,
+    },
+}
+
+const DEFAULT_CONFIG: &str = r#"bind: "127.0.0.1:8080"
+
+server_auth:
+  enabled: false
+  username: "admin"
+  password_hash: ""
+  totp_secret: null
+
+tls:
+  enabled: false
+  cert_path: null
+  key_path: null
+
+remotes:
+  - name: local-workspace
+    protocol: local
+    host: localhost
+    port: 0
+    username: local
+    auth:
+      password: ""
+
+  - name: local-sftp
+    protocol: sftp
+    host: 127.0.0.1
+    port: 2222
+    username: alex
+    auth:
+      password: "password"
+
+  - name: remote-ftp
+    protocol: ftp
+    host: 127.0.0.1
+    port: 21
+    username: ftpuser
+    auth:
+      password: "ftppassword"
+
+terminal:
+  name: terminal-ssh
+  protocol: sftp
+  host: 127.0.0.1
+  port: 2222
+  username: alex
+  auth:
+    password: "password"
+"#;
+
+async fn security_headers_middleware(
+    req: axum::extract::Request,
+    next: Next,
+) -> Response {
+    let mut response = next.run(req).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; img-src 'self' data:; connect-src 'self' ws: wss: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: data:;"
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
+    headers.insert(header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
+    response
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let cli = Cli::parse();
+    tracing::info!("Starting Ferrite {}", ferrum_core::FULL_VERSION_INFO);
+    let (config_path, bind_addr, tls_cert, tls_key) = match cli.command {
+        Some(Commands::Serve { config, bind, tls_cert, tls_key }) => (config, bind, tls_cert, tls_key),
+        Some(Commands::HashPassword { password }) => {
+            let hash = auth::hash_password(&password).expect("Failed to hash password");
+            println!("Generated Argon2id Hash:\n{}", hash);
+            return Ok(());
+        }
+        None => (cli.config, cli.bind, cli.tls_cert, cli.tls_key),
+    };
+
+    if !config_path.exists() {
+        let example_path = PathBuf::from("config/ferrite.example.yaml");
+        if example_path.exists() {
+            tracing::info!("Configuration file {:?} not found. Creating default from config/ferrite.example.yaml", config_path);
+            let _ = std::fs::copy(&example_path, &config_path);
+        } else {
+            tracing::info!("Configuration file {:?} not found. Generating default ferrite.yaml", config_path);
+            let _ = std::fs::write(&config_path, DEFAULT_CONFIG);
+        }
+    }
+
+    tracing::info!("Loading configuration from {:?}", config_path);
+    let config = Config::load_from_file(&config_path)?;
+
+    let identity_path = config_path.with_file_name("ferrite_identity.key");
+    let client_keypair = ferrum_core::load_or_generate_keypair(&identity_path)?;
+    tracing::info!(
+        "Ferrite client identity public key (share with Ferrous agents you want to connect to): {}",
+        ferrum_core::to_hex(&client_keypair.public)
+    );
+
+    let app_state = Arc::new(AppState::new(config.clone(), config_path.clone(), Arc::new(client_keypair))?);
+
+    let app = Router::new()
+        .route("/api/auth/status", get(auth_status))
+        .route("/api/auth/login", post(login_handler))
+        .route("/api/auth/logout", post(logout_handler))
+        .route("/api/settings", get(get_settings).post(save_settings))
+        .route("/api/settings/password", post(change_password_handler))
+        .route("/api/remotes", get(list_remotes).post(upsert_remote))
+        .route("/api/users", get(list_users).post(create_user))
+        .route("/api/users/:username", put(update_user).delete(delete_user))
+        .route("/api/files", get(list_files))
+        .route("/api/file", get(read_file).put(write_file).post(create_file))
+        .route("/api/directory", post(create_directory))
+        .route("/api/entry", delete(delete_entry))
+        .route("/api/rename", post(rename_entry))
+        .route("/api/copy", post(copy_entry))
+        .route("/api/download", get(download_file))
+        .route("/api/download/zip", post(download_zip))
+        .route("/api/upload", post(upload_file))
+        .route("/api/search", get(search_files))
+        .route("/api/search/global", get(global_search))
+        .route("/api/git/status", get(git_status))
+        .route("/api/git/diff", get(git_diff))
+        .route("/api/git/blame", get(git_blame))
+        .route("/api/git/history", get(git_history))
+        .route("/api/git/commit", post(git_commit))
+        .route("/api/git/stage", post(git_stage))
+        .route("/api/git/unstage", post(git_unstage))
+        .route("/api/git/revert", post(git_revert))
+        .route("/api/git/branches", get(git_branches))
+        .route("/api/git/checkout", post(git_checkout))
+        .route("/api/zip/inspect", get(zip_inspect))
+        .route("/api/zip/extract", get(zip_extract_entry))
+        .route("/ws/terminal", get(terminal_ws_handler))
+        .route("/ws/collab", get(collab_ws_handler))
+        .route("/ws/events", get(events_ws_handler))
+        .fallback(static_handler)
+        .layer(middleware::from_fn(security_headers_middleware))
+        .layer(CookieManagerLayer::new())
+        .layer(CorsLayer::permissive())
+        .with_state(app_state);
+
+    let addr: SocketAddr = bind_addr.parse()?;
+
+    let cert_file = tls_cert
+        .or_else(|| config.tls.cert_path.as_ref().map(PathBuf::from));
+    let key_file = tls_key
+        .or_else(|| config.tls.key_path.as_ref().map(PathBuf::from));
+
+    if let (Some(cert), Some(key)) = (cert_file, key_file) {
+        serve_tls(addr, app, &cert, &key).await?;
+    } else {
+        tracing::info!("Ferrite server starting on http://{}", addr);
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app).await?;
+    }
+
+    Ok(())
+}
+
+async fn serve_tls(
+    addr: SocketAddr,
+    app: Router,
+    cert_path: &Path,
+    key_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use axum_server::tls_rustls::RustlsConfig;
+
+    tracing::info!("Ferrite server starting with TLS on https://{}", addr);
+    let rustls_config = RustlsConfig::from_pem_file(cert_path, key_path).await?;
+    axum_server::bind_rustls(addr, rustls_config)
+        .serve(app.into_make_service())
+        .await?;
+    Ok(())
+}
+
+async fn static_handler(uri: Uri) -> impl IntoResponse {
+    let mut path = uri.path().trim_start_matches('/');
+    if path.is_empty() {
+        path = "index.html";
+    }
+
+    match Assets::get(path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
+            Response::builder()
+                .header(header::CONTENT_TYPE, mime.as_ref())
+                .body(Body::from(content.data))
+                .unwrap()
+        }
+        None => {
+            if let Some(index_content) = Assets::get("index.html") {
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                    .body(Body::from(index_content.data))
+                    .unwrap()
+            } else {
+                Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::from("404 Not Found"))
+                    .unwrap()
+            }
+        }
+    }
+}

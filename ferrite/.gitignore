@@ -1,0 +1,15 @@
+# Target build directories
+/target
+/.target_build
+/target_*
+
+# Local active configuration (contains real credentials)
+/ferrite.yaml
+/ferrite_identity.key
+
+# IDE & OS files
+.DS_Store
+Thumbs.db
+.vs/
+.vscode/
+.idea/

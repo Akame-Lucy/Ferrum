@@ -1,0 +1,38 @@
+# Build artifacts across the monorepo
+**/target/
+**/.target_build/
+**/target_*/
+dist/
+build/
+
+# Local Cargo configuration and credentials
+.cargo/
+**/cargo-config.toml
+
+# Local secrets and configs (contain credentials or private keys)
+**/ferrite.yaml
+**/ferrous.yaml
+**/*_identity.key
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+.env
+.env.*
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# AI tool directories
+.claude/
+.agents/
+.gemini/

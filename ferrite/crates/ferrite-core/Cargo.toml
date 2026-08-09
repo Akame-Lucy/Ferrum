@@ -1,0 +1,36 @@
+[package]
+name = "ferrite-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Internal to the workspace; Ferrum ships binaries, not crates.io libraries.
+publish = false
+
+[dependencies]
+ferrum-core = { path = "../../../shared/ferrum-core" }
+bytes = "1.6"
+futures-core = "0.3"
+futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
+async-trait = "0.1"
+tokio = { version = "1.38", features = ["full"] }
+snow = "0.9"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+thiserror = "1.0"
+tracing = "0.1"
+suppaftp = { version = "5.3", default-features = false, features = ["async-secure", "deprecated"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+rust-s3 = "0.34"
+xmltree = "0.10"
+url = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+ssh2 = "0.9"
+
+[target.'cfg(not(windows))'.dependencies]
+ssh2 = "0.9"
+
+

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+# Three pushes in a row to the same PR should not burn three full matrix runs:
+# only the newest commit's result can gate the merge button anyway.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Caching makes incremental compilation a net loss on ephemeral runners.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  check:
+    name: Check & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Install Windows Build Dependencies (NASM)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install nasm -y
+          echo "C:\Program Files\NASM" >> $env:GITHUB_PATH
+
+      # --locked makes a Cargo.lock that disagrees with Cargo.toml a hard error
+      # instead of silently resolving to versions nobody reviewed.
+      - name: Cargo Check
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Cargo Test
+        run: cargo test --workspace --locked
+
+  # Collapses the OS matrix into one status context. Branch protection can
+  # require this single check instead of naming every matrix leg, so adding or
+  # renaming a platform never silently stops gating the merge button.
+  gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [check]
+    if: always()
+    steps:
+      - name: Verify every required job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          # A cancelled or skipped dependency is not a pass. Anything other
+          # than "success" must keep this gate red.
+          if echo "$RESULTS" | jq -e 'to_entries[] | select(.value.result != "success")' > /dev/null; then
+            echo "::error::One or more CI jobs did not succeed - this PR is not mergeable."
+            exit 1
+          fi
+          echo "All CI jobs succeeded."

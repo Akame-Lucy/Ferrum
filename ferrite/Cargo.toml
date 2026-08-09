@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ferrite-core",
+    "crates/ferrite-server",
+    "crates/ferrite-pty",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Akame Lucy", "Ferrite Contributors"]
+license = "MIT"

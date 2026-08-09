@@ -1,0 +1,128 @@
+name: Release Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v0.1.0-rusty-nail)'
+        required: true
+        default: 'v0.1.0-rusty-nail'
+      draft:
+        description: 'Create Draft Release'
+        required: true
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-release:
+    name: Build Release Assets (${{ matrix.target_os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_os: linux-x64
+            archive_ext: tar.gz
+          - os: windows-latest
+            target_os: windows-x64
+            archive_ext: zip
+          - os: macos-latest
+            target_os: macos-x64
+            archive_ext: tar.gz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Windows Build Dependencies (NASM)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install nasm -y
+          echo "C:\Program Files\NASM" >> $env:GITHUB_PATH
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Assemble Windows Packages
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $TAG = if ("${{ github.event.inputs.release_tag }}" -ne "") { "${{ github.event.inputs.release_tag }}" } else { "${{ github.ref_name }}" }
+          $OS_NAME = "${{ matrix.target_os }}"
+
+          # Ferrite standalone
+          New-Item -ItemType Directory -Path "dist/ferrite-$TAG-$OS_NAME" -Force
+          Copy-Item "target/release/ferrite.exe" -Destination "dist/ferrite-$TAG-$OS_NAME/"
+          Copy-Item "ferrite/config/ferrite.example.yaml" -Destination "dist/ferrite-$TAG-$OS_NAME/"
+          Copy-Item "README.md" -Destination "dist/ferrite-$TAG-$OS_NAME/"
+          Compress-Archive -Path "dist/ferrite-$TAG-$OS_NAME/*" -DestinationPath "dist/ferrite-$TAG-$OS_NAME.zip"
+
+          # Ferrous standalone
+          New-Item -ItemType Directory -Path "dist/ferrous-$TAG-$OS_NAME" -Force
+          Copy-Item "target/release/ferrous-agent.exe" -Destination "dist/ferrous-$TAG-$OS_NAME/"
+          Copy-Item "ferrous/config/ferrous.example.yaml" -Destination "dist/ferrous-$TAG-$OS_NAME/"
+          Copy-Item "README.md" -Destination "dist/ferrous-$TAG-$OS_NAME/"
+          Compress-Archive -Path "dist/ferrous-$TAG-$OS_NAME/*" -DestinationPath "dist/ferrous-$TAG-$OS_NAME.zip"
+
+          # Ferrum Bundle
+          New-Item -ItemType Directory -Path "dist/ferrum-bundle-$TAG-$OS_NAME" -Force
+          Copy-Item "target/release/ferrite.exe" -Destination "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          Copy-Item "target/release/ferrous-agent.exe" -Destination "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          Copy-Item "ferrite/config/ferrite.example.yaml" -Destination "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          Copy-Item "ferrous/config/ferrous.example.yaml" -Destination "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          Copy-Item "README.md" -Destination "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          Copy-Item "docs/SECURITY.md" -Destination "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          Compress-Archive -Path "dist/ferrum-bundle-$TAG-$OS_NAME/*" -DestinationPath "dist/ferrum-bundle-$TAG-$OS_NAME.zip"
+
+      - name: Assemble Unix Packages (Linux & macOS)
+        if: runner.os != 'Windows'
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.ref_name }}"; fi
+          OS_NAME="${{ matrix.target_os }}"
+
+          mkdir -p "dist/ferrite-$TAG-$OS_NAME"
+          cp target/release/ferrite "dist/ferrite-$TAG-$OS_NAME/"
+          cp ferrite/config/ferrite.example.yaml "dist/ferrite-$TAG-$OS_NAME/"
+          cp README.md "dist/ferrite-$TAG-$OS_NAME/"
+          tar -czf "dist/ferrite-$TAG-$OS_NAME.tar.gz" -C dist "ferrite-$TAG-$OS_NAME"
+
+          mkdir -p "dist/ferrous-$TAG-$OS_NAME"
+          cp target/release/ferrous-agent "dist/ferrous-$TAG-$OS_NAME/"
+          cp ferrous/config/ferrous.example.yaml "dist/ferrous-$TAG-$OS_NAME/"
+          cp README.md "dist/ferrous-$TAG-$OS_NAME/"
+          tar -czf "dist/ferrous-$TAG-$OS_NAME.tar.gz" -C dist "ferrous-$TAG-$OS_NAME"
+
+          mkdir -p "dist/ferrum-bundle-$TAG-$OS_NAME"
+          cp target/release/ferrite "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          cp target/release/ferrous-agent "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          cp ferrite/config/ferrite.example.yaml "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          cp ferrous/config/ferrous.example.yaml "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          cp README.md "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          cp docs/SECURITY.md "dist/ferrum-bundle-$TAG-$OS_NAME/"
+          tar -czf "dist/ferrum-bundle-$TAG-$OS_NAME.tar.gz" -C dist "ferrum-bundle-$TAG-$OS_NAME"
+
+      - name: Publish Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: Ferrum ${{ github.event.inputs.release_tag || github.ref_name }}
+          draft: ${{ github.event.inputs.draft || false }}
+          prerelease: false
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
