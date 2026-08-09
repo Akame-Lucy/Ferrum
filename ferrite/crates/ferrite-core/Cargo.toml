@@ -24,7 +24,7 @@ tracing = "0.1"
 suppaftp = { version = "5.3", default-features = false, features = ["async-secure", "deprecated"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 rust-s3 = "0.34"
-xmltree = "0.10"
+xmltree = "0.12"
 url = "2.5"
 
 [target.'cfg(windows)'.dependencies]
