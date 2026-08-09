@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check changed files against protected paths
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Paths that must NEVER be committed. Keep in sync with .gitignore.
@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require a Conventional Commits PR title
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Squash-merging writes the PR title into main's history verbatim,
@@ -133,7 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Block oversized files
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Git keeps every blob forever. A binary committed once stays in
