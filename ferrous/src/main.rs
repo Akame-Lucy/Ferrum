@@ -203,8 +203,11 @@ fn load_settings(cli: &Cli, source: &ConfigSource) -> Result<Settings, Box<dyn s
 
         let mut clients = ClientMap::new();
         for entry in file_config.clients {
-            let pubkey = ferrum_core::from_hex(&entry.pubkey)
-                .ok_or_else(|| format!("Invalid hex pubkey in config: {}", entry.pubkey))?;
+            // Length-checked: a key that is valid hex but the wrong size would
+            // otherwise be authorized and then never match any real client,
+            // which looks like a handshake bug rather than a typo.
+            let pubkey = ferrum_core::parse_public_key(&entry.pubkey)
+                .map_err(|e| format!("Invalid client pubkey in config ({}): {}", e, entry.pubkey))?;
             clients.insert(pubkey, client_capability(entry.allowed_paths, entry.read_only, entry.allow_shell));
         }
 
@@ -219,8 +222,8 @@ fn load_settings(cli: &Cli, source: &ConfigSource) -> Result<Settings, Box<dyn s
         let capability = client_capability(cli.allowed_path.clone(), cli.read_only, !cli.no_shell);
         let mut clients = ClientMap::new();
         for hex_key in &cli.authorize_client {
-            let pubkey = ferrum_core::from_hex(hex_key)
-                .ok_or_else(|| format!("Invalid hex pubkey: {}", hex_key))?;
+            let pubkey = ferrum_core::parse_public_key(hex_key)
+                .map_err(|e| format!("Invalid --authorize-client key ({}): {}", e, hex_key))?;
             clients.insert(pubkey, capability.clone());
         }
         Ok(Settings {
