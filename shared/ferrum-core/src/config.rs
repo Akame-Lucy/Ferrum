@@ -25,6 +25,22 @@ pub struct AuthConfig {
     pub secret_key: Option<String>,
 }
 
+impl AuthConfig {
+    /// Path to a private key file, when key auth is configured.
+    ///
+    /// Both spellings hold a filesystem path, not key material.
+    /// `private_key_path` is what the example configs document;
+    /// `private_key` is the older name that existing configs already use, and
+    /// the only one the SSH paths used to read. Accepting both means neither
+    /// spelling silently falls through to password auth.
+    pub fn key_path(&self) -> Option<&str> {
+        self.private_key_path
+            .as_deref()
+            .or(self.private_key.as_deref())
+            .filter(|p| !p.trim().is_empty())
+    }
+}
+
 impl fmt::Debug for AuthConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AuthConfig")

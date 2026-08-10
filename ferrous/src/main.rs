@@ -3,7 +3,7 @@ mod server;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use clap::Parser;
 use serde::Deserialize;
@@ -16,6 +16,95 @@ use server::FerrousServer;
 
 type ClientMap = HashMap<Vec<u8>, Capability>;
 
+/// Picked up automatically from the working directory when --config is absent,
+/// mirroring how Ferrite finds ferrite.yaml.
+const DEFAULT_CONFIG_FILENAME: &str = "ferrous.yaml";
+
+/// Written on first run when nothing is configured yet.
+///
+/// Deliberately ships with an empty `clients` list. Ferrite can generate a
+/// usable default because a client with no remotes is inert; an agent is not.
+/// This agent exposes a filesystem and optionally a shell, so a generated
+/// config that authorized anybody would be a hole. The agent writes this,
+/// explains it, and stops.
+const CONFIG_TEMPLATE: &str = r#"# Ferrous agent configuration, generated on first run.
+#
+# The agent will NOT start until at least one client is authorized below. That
+# is deliberate: this process exposes a filesystem and, if you allow it, a
+# shell. It refuses to run with an empty guest list rather than guessing.
+#
+# To finish setup:
+#   1. Start Ferrite. It logs a client identity public key at startup.
+#   2. Paste that key as `pubkey` in the clients: block below, and uncomment it.
+#   3. Point allowed_paths at directories that already exist.
+#   4. Copy this agent's own public key, logged at every startup, into
+#      ferrite.yaml as `agent_pubkey` on the matching remote. That pin is what
+#      makes a substituted agent fail instead of being trusted silently.
+
+bind: "127.0.0.1:9090"
+
+# Persistent Noise identity for this agent, generated on first run. Back it up:
+# losing it means every Ferrite that pinned the old agent_pubkey refuses to
+# reconnect until repinned.
+identity_path: "ferrous_identity.key"
+
+# Drop root after binding, before accepting any connection. Only takes effect
+# if the process actually starts as root.
+# run_as_user: "ferrous"
+# run_as_group: "ferrous"
+
+# Each entry is one authorized client, identified by its Noise static public
+# key. A client not listed here is rejected before any request is processed.
+clients: []
+#  - pubkey: "<client public key from the Ferrite startup log>"
+#    allowed_paths:
+#      - "/srv/data"
+#    read_only: false
+#    allow_shell: false
+"#;
+
+/// Absolute path for logging, without the `\\?\` verbatim prefix that
+/// canonicalize returns on Windows and nobody wants to read.
+fn display_path(path: &Path) -> String {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let text = resolved.display().to_string();
+    text.strip_prefix(r"\\?\").unwrap_or(&text).to_string()
+}
+
+/// Where this run's settings come from.
+enum ConfigSource {
+    /// An explicit --config, or a ferrous.yaml discovered in the working directory.
+    File(PathBuf),
+    /// --authorize-client and friends were passed; no file involved.
+    Flags,
+    /// Nothing configured yet. Carries the path a template should be written to.
+    FirstRun(PathBuf),
+}
+
+/// Resolution order: an explicit --config wins, then any CLI-driven setup,
+/// then an auto-discovered ferrous.yaml. An explicit --config that does not
+/// exist is an error rather than a silent fallback: the operator named a
+/// policy file and running under a different one would be worse than stopping.
+fn resolve_config_source(cli: &Cli) -> Result<ConfigSource, Box<dyn std::error::Error>> {
+    if let Some(path) = &cli.config {
+        if !path.is_file() {
+            return Err(format!("--config {:?} does not exist", path).into());
+        }
+        return Ok(ConfigSource::File(path.clone()));
+    }
+
+    if !cli.authorize_client.is_empty() {
+        return Ok(ConfigSource::Flags);
+    }
+
+    let default_path = PathBuf::from(DEFAULT_CONFIG_FILENAME);
+    if default_path.is_file() {
+        Ok(ConfigSource::File(default_path))
+    } else {
+        Ok(ConfigSource::FirstRun(default_path))
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "ferrous-agent")]
 #[command(version = ferrum_core::FULL_VERSION_INFO)]
@@ -27,7 +116,11 @@ struct Cli {
     #[arg(long, default_value = "ferrous_identity.key")]
     identity_path: PathBuf,
 
-    #[arg(long, help = "Load bind/identity/authorized clients from a ferrous.yaml file instead of CLI flags")]
+    #[arg(
+        long,
+        help = "Load bind/identity/authorized clients from a ferrous.yaml file instead of CLI flags. \
+                Defaults to ./ferrous.yaml when present."
+    )]
     config: Option<PathBuf>,
 
     #[arg(long, default_value = "false")]
@@ -98,8 +191,13 @@ struct Settings {
     run_as_group: Option<String>,
 }
 
-fn load_settings(cli: &Cli) -> Result<Settings, Box<dyn std::error::Error>> {
-    if let Some(config_path) = &cli.config {
+fn load_settings(cli: &Cli, source: &ConfigSource) -> Result<Settings, Box<dyn std::error::Error>> {
+    if let ConfigSource::File(config_path) = source {
+        // Log the resolved absolute path, not what was typed: which policy
+        // file an agent is actually running should never be a guess, and with
+        // auto-discovery it now depends on the working directory.
+        tracing::info!("Loading configuration from {}", display_path(config_path));
+
         let content = std::fs::read_to_string(config_path)?;
         let file_config: FileConfig = serde_yaml::from_str(&content)?;
 
@@ -177,7 +275,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
     tracing::info!("Starting Ferrous Agent {}", ferrum_core::FULL_VERSION_INFO);
-    let settings = load_settings(&cli)?;
+
+    let source = resolve_config_source(&cli)?;
+    if let ConfigSource::FirstRun(path) = &source {
+        std::fs::write(path, CONFIG_TEMPLATE)?;
+        tracing::info!("No configuration found. Wrote a starter config to {}", display_path(path));
+        tracing::error!(
+            "Nothing is authorized yet, so the agent will not start. Add a client key under \
+             clients: in that file (see the comments in it), then run this again."
+        );
+        return Err("no authorized clients configured".into());
+    }
+
+    let settings = load_settings(&cli, &source)?;
 
     let identity = ferrum_core::load_or_generate_keypair(&settings.identity_path)?;
     tracing::info!(
@@ -187,11 +297,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if settings.clients.is_empty() {
         tracing::error!(
-            "No authorized clients configured. Pass --authorize-client <hex-pubkey> (repeatable) or use --config with a clients: list."
+            "No authorized clients configured. Add a client key under clients: in the config \
+             file, or pass --authorize-client <hex-pubkey> (repeatable)."
         );
         return Err("no authorized clients configured".into());
     }
     tracing::info!("{} authorized client key(s) loaded", settings.clients.len());
+
+    // A grant over a directory that does not exist is almost always a typo,
+    // and it fails confusingly later: file operations error per-request, and a
+    // shell session just opens somewhere else entirely.
+    for capability in settings.clients.values() {
+        for granted in &capability.allowed_paths {
+            if granted != "/" && !std::path::Path::new(granted).is_dir() {
+                tracing::warn!(
+                    "Granted path {:?} does not exist. Create it, or sessions using it will not \
+                     behave as the grant suggests.",
+                    granted
+                );
+            }
+        }
+    }
 
     let addr: SocketAddr = settings.bind.parse()?;
     let identity = Arc::new(identity);

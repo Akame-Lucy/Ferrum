@@ -1,5 +1,9 @@
 # Example Ferrite configuration: copy to ferrite.yaml and edit.
 # See ferrite/README.md for the full reference.
+#
+# Only the local remote is enabled below. Uncomment the ones you actually have
+# a server for: a remote pointing at a host that does not exist just produces
+# connection failures in the UI.
 
 bind: "127.0.0.1:8080"
 
@@ -25,27 +29,63 @@ remotes:
     auth:
       password: ""
 
+  # A Ferrous agent: the recommended way to reach a host you control, and the
+  # only remote that also gives you a shell without an SSH server.
+  #
+  #   1. Start the agent:  ferrous-agent --config ferrous.yaml
+  #   2. Put the client key Ferrite prints at startup into ferrous.yaml under
+  #      clients: -> pubkey.
+  #   3. Put the agent's own key, from its startup log, into agent_pubkey here.
+  #
+  # agent_pubkey is a pin, not a credential: it is what makes a substituted or
+  # impersonating agent fail to connect rather than being trusted silently.
+  # - name: my-ferrous-host
+  #   protocol: ferrous
+  #   host: 127.0.0.1
+  #   port: 9090
+  #   username: local
+  #   agent_pubkey: "<agent public key from the ferrous-agent startup log>"
+  #   auth:
+  #     password: ""
+
   # SFTP example: set host/port/username and your credentials.
-  - name: my-sftp-server
-    protocol: sftp
-    host: 192.168.1.100
-    port: 22
-    username: your-user
-    auth:
-      # Prefer key auth; set private_key_path instead of password.
-      # private_key_path: "~/.ssh/id_ed25519"
-      password: ""           # set your SFTP password here
+  # - name: my-sftp-server
+  #   protocol: sftp
+  #   host: 192.168.1.100
+  #   port: 22
+  #   username: your-user
+  #   auth:
+  #     # Prefer key auth. private_key holds the path to the key file;
+  #     # ~ is expanded.
+  #     private_key: "~/.ssh/id_ed25519"
+  #     password: ""           # or set your SFTP password here
 
   # FTP example.
-  - name: my-ftp-server
-    protocol: ftp
-    host: 192.168.1.200
-    port: 21
-    username: your-user
-    auth:
-      password: ""           # set your FTP password here
+  # - name: my-ftp-server
+  #   protocol: ftp
+  #   host: 192.168.1.200
+  #   port: 21
+  #   username: your-user
+  #   auth:
+  #     password: ""           # set your FTP password here
 
-# Terminal remote: the interactive shell connects to this.
+# Which remote the interactive terminal connects to. Leave this out entirely
+# until you have one: with no terminal block Ferrite reports that none is
+# configured, which beats failing to reach a server that was never there.
+#
+# Through a Ferrous agent. Requires allow_shell: true for this client in
+# ferrous.yaml, and needs no SSH server at all:
+# terminal:
+#   name: terminal-ferrous
+#   protocol: ferrous
+#   host: 127.0.0.1
+#   port: 9090
+#   username: local
+#   agent_pubkey: "<agent public key from the ferrous-agent startup log>"
+#   auth:
+#     password: ""
+#
+# Or over SSH, against a real SSH server:
 # terminal:
 #   name: terminal-ssh
 #   protocol: sftp
@@ -53,4 +93,4 @@ remotes:
 #   port: 22
 #   username: your-user
 #   auth:
-#     private_key_path: "~/.ssh/id_ed25519"
+#     private_key: "~/.ssh/id_ed25519"

@@ -21,11 +21,25 @@ Open `http://127.0.0.1:8080`. See [ferrite/README.md](ferrite/README.md) for con
 To also run a Ferrous agent (the premium path for hosts you control; one consistent protocol instead of per-OS SSH quirks):
 
 ```bash
-cd ferrous
-cargo run --bin ferrous-agent -- --authorize-client <hex-pubkey-ferrite-logged-at-startup> --allowed-path /some/dir
+cargo run --bin ferrous-agent
 ```
 
-See [ferrous/README.md](ferrous/README.md) for the config-file form and capability scoping.
+The first run writes a `ferrous.yaml` next to itself and stops, because nothing is authorized yet. Fill in the client key as described below, run it again, and it picks the file up automatically. Prefer flags? `--authorize-client <hex-pubkey> --allowed-path /some/dir` still works and skips the file entirely.
+
+### Connecting Ferrite to Ferrous
+
+Two keys travel in opposite directions, and they do different jobs:
+
+| Key | Printed by | Goes into | Purpose |
+|-----|-----------|-----------|---------|
+| Client identity | Ferrite, at startup | `ferrous.yaml` -> `clients:` -> `pubkey` | Authorization: who may connect |
+| Agent identity | Ferrous, at startup | `ferrite.yaml` -> `agent_pubkey` | Pinning: which agent you trust |
+
+Then two more things have to line up: the `host`/`port` of Ferrite's remote must match Ferrous's `bind:`, and `allowed_paths` in `ferrous.yaml` decides what that client can reach (make sure those directories exist).
+
+Note that `remotes:` and `terminal:` in `ferrite.yaml` are independent. A Ferrous entry under `remotes:` gives you the file browser; a Ferrous `terminal:` block gives you the shell, which also needs `allow_shell: true` on that client. Configuring one does not configure the other.
+
+See [ferrous/README.md](ferrous/README.md) for capability scoping, and the comments in `ferrite/config/ferrite.example.yaml` for a worked example of both.
 
 ## Repository layout
 
@@ -83,6 +97,13 @@ green.
 ## Author
 
 Created by **Akame Lucy**.
+
+## Contributors
+
+- **Mad-Krell** ([@Mad-Krell](https://github.com/Mad-Krell))
+
+Thanks to everyone who has filed an issue or sent a patch. See
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) if you would like to join them.
 
 ## License
 

@@ -1,6 +1,7 @@
 use ferrum_core::Capability;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -52,8 +53,20 @@ pub fn spawn(
 
     let mut cmd = CommandBuilder::new(default_shell());
     if let Some(root) = capability.allowed_paths.first() {
+        // A missing directory here is not fatal, but it must not pass
+        // silently: Windows ignores an invalid working directory at process
+        // creation, so the shell would come up in the user's profile instead
+        // and look like the capability was never applied.
         if root != "/" {
-            cmd.cwd(root);
+            if Path::new(root).is_dir() {
+                cmd.cwd(root);
+            } else {
+                tracing::warn!(
+                    "allowed_paths[0] {:?} is not an existing directory; starting the shell in \
+                     the agent's working directory instead. Create it to control where sessions open.",
+                    root
+                );
+            }
         }
     }
 
