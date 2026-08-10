@@ -101,6 +101,26 @@ pub struct AppState {
     pub login_attempts: Mutex<HashMap<String, RateLimitInfo>>,
 }
 
+/// Resolves a Ferrous remote's pinned agent key.
+///
+/// `None` means the operator set no pin and accepts trust-on-first-use.
+/// A pin that is present but unparseable is an error, never a silent `None`:
+/// dropping to unpinned because one character was mistyped is the failure mode
+/// this function exists to prevent.
+fn resolve_agent_pin(remote: &ferrum_core::config::RemoteConfig) -> Result<Option<Vec<u8>>, RemoteError> {
+    match remote.agent_pubkey.as_deref() {
+        None => Ok(None),
+        Some(raw) if raw.trim().is_empty() => Ok(None),
+        Some(raw) => ferrum_core::parse_public_key(raw).map(Some).map_err(|e| {
+            RemoteError::OperationFailed(format!(
+                "Remote '{}' has an invalid agent_pubkey ({}). Fix it or remove the line to \
+                 connect unpinned; it will not be ignored.",
+                remote.name, e
+            ))
+        }),
+    }
+}
+
 fn create_default_local_remote() -> ferrum_core::config::RemoteConfig {
     ferrum_core::config::RemoteConfig {
         name: "local".into(),
@@ -155,7 +175,7 @@ impl AppState {
                         remote.host.clone(),
                         remote.port,
                         client_keypair.clone(),
-                        remote.agent_pubkey.as_deref().and_then(ferrum_core::from_hex),
+                        resolve_agent_pin(remote)?,
                     ));
                     backends.insert(remote.name.clone(), backend);
                 }
@@ -319,6 +339,13 @@ pub struct UpsertRemotePayload {
     pub private_key: Option<String>,
     pub bucket: Option<String>,
     pub region: Option<String>,
+    // Everything below used to be unreachable through this endpoint and was
+    // written as null on every save, so editing a remote in the UI quietly
+    // erased it from ferrite.yaml. An omitted field now means "leave as is".
+    pub agent_pubkey: Option<String>,
+    pub base_path: Option<String>,
+    pub endpoint: Option<String>,
+    pub use_ssl: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -644,6 +671,15 @@ pub async fn upsert_remote(
         _ => return Err(ApiError(RemoteError::OperationFailed("Invalid protocol".into()))),
     };
 
+    // Saving a remote must not destroy settings this endpoint cannot express.
+    // The form has no input for agent_pubkey, so writing null unconditionally
+    // meant one UI edit silently turned off identity pinning for that agent.
+    let existing = {
+        let config = state.config.lock().unwrap();
+        config.remotes.iter().find(|r| r.name == payload.name).cloned()
+    };
+    let previous = existing.as_ref();
+
     let remote_config = ferrite_core::RemoteConfig {
         name: payload.name.clone(),
         protocol: protocol.clone(),
@@ -651,19 +687,25 @@ pub async fn upsert_remote(
         port: payload.port,
         username: payload.username,
         auth: ferrite_core::AuthConfig {
-            password: payload.password,
-            private_key: payload.private_key,
-            private_key_path: None,
-            passphrase: None,
-            secret_key: None,
+            // An omitted secret keeps the stored one; an explicit empty string
+            // still clears it, so a credential can be removed on purpose but
+            // never by accident.
+            password: payload.password.or_else(|| previous.and_then(|r| r.auth.password.clone())),
+            private_key: payload.private_key.or_else(|| previous.and_then(|r| r.auth.private_key.clone())),
+            private_key_path: previous.and_then(|r| r.auth.private_key_path.clone()),
+            passphrase: previous.and_then(|r| r.auth.passphrase.clone()),
+            secret_key: previous.and_then(|r| r.auth.secret_key.clone()),
         },
-        bucket: payload.bucket,
-        region: payload.region,
-        endpoint: None,
-        use_ssl: None,
-        base_path: None,
-        agent_pubkey: None,
+        bucket: payload.bucket.or_else(|| previous.and_then(|r| r.bucket.clone())),
+        region: payload.region.or_else(|| previous.and_then(|r| r.region.clone())),
+        endpoint: payload.endpoint.or_else(|| previous.and_then(|r| r.endpoint.clone())),
+        use_ssl: payload.use_ssl.or_else(|| previous.and_then(|r| r.use_ssl)),
+        base_path: payload.base_path.or_else(|| previous.and_then(|r| r.base_path.clone())),
+        agent_pubkey: payload.agent_pubkey.or_else(|| previous.and_then(|r| r.agent_pubkey.clone())),
     };
+
+    // Reject a bad pin here rather than storing it and failing open later.
+    let agent_pin = resolve_agent_pin(&remote_config).map_err(ApiError)?;
 
     let backend: Arc<dyn RemoteFilesystem> = match protocol {
         ProtocolType::Sftp => Arc::new(SftpBackend::new(remote_config.clone())),
@@ -675,7 +717,7 @@ pub async fn upsert_remote(
             remote_config.host.clone(),
             remote_config.port,
             state.client_keypair.clone(),
-            remote_config.agent_pubkey.as_deref().and_then(ferrum_core::from_hex),
+            agent_pin,
         )),
     };
 
@@ -1504,7 +1546,16 @@ async fn handle_terminal_socket(
 
     let (pty_session, tx_pty_in, mut rx_pty_out) = if remote_config.protocol == ProtocolType::Ferrous {
         let client_keypair = state.client_keypair.clone();
-        let expected_agent_pubkey = remote_config.agent_pubkey.as_deref().and_then(ferrum_core::from_hex);
+        // A malformed pin must not open an unpinned shell. Fail the session and
+        // say why, rather than connecting to an agent nobody verified.
+        let expected_agent_pubkey = match resolve_agent_pin(&remote_config) {
+            Ok(pin) => pin,
+            Err(e) => {
+                tracing::warn!("Terminal Ferrous connect to {} refused: {}", host, e);
+                report_terminal_failure(socket, &format!("{}", e)).await;
+                return;
+            }
+        };
         match ferrite_core::FerrousPtySession::connect(
             remote_config.host.clone(),
             remote_config.port,

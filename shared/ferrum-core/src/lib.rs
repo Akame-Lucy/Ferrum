@@ -8,7 +8,7 @@ pub use config::{
     AuthConfig, Config, PathGrant, ProtocolType, RemoteConfig, Role, ServerAuthConfig, TlsConfig,
     User,
 };
-pub use identity::{from_hex, load_or_generate_keypair, to_hex};
+pub use identity::{from_hex, load_or_generate_keypair, parse_public_key, to_hex, KEY_LEN};
 pub use noise::NoiseSession;
 pub use protocol::{Capability, FerrousRequest, FerrousResponse};
 pub use traits::{BoxStream, FileEntry, FileMeta, RemoteError, RemoteFilesystem, SearchMatch};
