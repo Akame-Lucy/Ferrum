@@ -1012,7 +1012,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "ferrite-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "ferrite-pty"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ferrite-core",
  "serde",
@@ -1050,7 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "ferrite-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "axum",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "ferrous"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "bytes",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "ferrum-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "async-trait",

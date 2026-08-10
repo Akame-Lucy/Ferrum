@@ -64,7 +64,7 @@ fn create_connection(config: &RemoteConfig) -> Result<(Session, ssh2::Sftp), Rem
     sess.handshake()
         .map_err(|e| RemoteError::Ssh(format!("SSH handshake failed: {}", e)))?;
 
-    if let Some(ref key_path) = config.auth.private_key {
+    if let Some(key_path) = config.auth.key_path() {
         let expanded_path = shellexpand_path(key_path);
         let path = Path::new(&expanded_path);
         if path.exists() {
