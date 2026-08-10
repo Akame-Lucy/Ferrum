@@ -31,7 +31,7 @@ axum-server = { version = "0.8", features = ["tls-rustls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 mime_guess = "2.0"
-sha2 = "0.10"
+sha2 = "0.11"
 sha1 = "0.10"
 rand = "0.8"
 zip = "2.1"
