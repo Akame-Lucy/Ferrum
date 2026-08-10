@@ -14,7 +14,7 @@ path = "src/main.rs"
 ferrite-core = { path = "../ferrite-core" }
 ferrite-pty = { path = "../ferrite-pty" }
 ferrum-core = { path = "../../../shared/ferrum-core" }
-axum = { version = "0.7", features = ["ws", "multipart"] }
+axum = { version = "0.8", features = ["ws", "multipart"] }
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
