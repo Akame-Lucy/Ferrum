@@ -1,0 +1,52 @@
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For usage and deployment questions. If something is definitely broken,
+        open a [bug report](https://github.com/Akame-Lucy/Ferrum/issues/new/choose)
+        instead so it can be tracked and closed.
+
+        **Security issues never belong here.** Anything involving auth bypass,
+        path escape, key handling, or the Noise transport goes through
+        [private reporting](https://github.com/Akame-Lucy/Ferrum/security/advisories/new).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is this about
+      options:
+        - Ferrite (client, web UI, control plane)
+        - Ferrous (server agent)
+        - Connecting the two
+        - Deployment and hardening
+        - A backend (SFTP, FTP, WebDAV, S3, local)
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and where did you get stuck?
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you have tried
+      description: |
+        Including anything in the README or docs/ that seemed relevant but did
+        not cover your case. Gaps in the docs are useful to hear about.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Version and platform
+      description: |
+        The version line the binaries log at startup, and your OS. Include
+        config snippets if they are relevant, with passwords and key material
+        removed.

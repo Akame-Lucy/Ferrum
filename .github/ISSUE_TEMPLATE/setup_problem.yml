@@ -1,0 +1,112 @@
+name: Setup or configuration problem
+description: Ferrite or Ferrous starts but will not connect, browse, or open a shell
+labels: ["setup", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most connection failures come down to a mismatch between `ferrite.yaml`
+        and `ferrous.yaml` rather than a defect. The questions below are the
+        ones that resolve it fastest.
+
+        **Never paste a private key or the contents of `*_identity.key`.**
+        Public keys are safe to share; the questions below only ask for the
+        first 8 characters anyway.
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where it goes wrong
+      options:
+        - Ferrite will not start
+        - Ferrous will not start
+        - Both start, but the file browser fails
+        - Both start, but the terminal fails
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: The exact error
+      description: |
+        Copy the full line from the terminal or the browser console. If a
+        window closed too fast to read, run the binary from an already-open
+        terminal so the output survives.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The line both binaries log at startup, for example `v0.1.1 "Rusty Nail"`.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: "e.g. Windows 11 x64, Ubuntu 24.04 x86_64, macOS 15 arm64"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Key exchange
+
+        Two keys travel in opposite directions and are easy to conflate. The
+        client key Ferrite logs belongs in `ferrous.yaml` under `clients:`, and
+        the agent key Ferrous logs belongs in `ferrite.yaml` as `agent_pubkey`.
+
+  - type: input
+    id: client_key
+    attributes:
+      label: First 8 characters of the client key, as Ferrite logs it
+      placeholder: "857a49e4"
+
+  - type: input
+    id: client_key_in_agent
+    attributes:
+      label: First 8 characters of the `pubkey` in ferrous.yaml
+      description: These two should match exactly. If they do not, that is the bug.
+      placeholder: "857a49e4"
+
+  - type: input
+    id: agent_key
+    attributes:
+      label: First 8 characters of the agent key, as Ferrous logs it
+      placeholder: "0f8c28ac"
+
+  - type: input
+    id: agent_key_in_client
+    attributes:
+      label: First 8 characters of `agent_pubkey` in ferrite.yaml
+      description: These two should match exactly.
+      placeholder: "0f8c28ac"
+
+  - type: textarea
+    id: configs
+    attributes:
+      label: Your configuration files
+      description: |
+        Both `ferrite.yaml` and `ferrous.yaml`, with passwords removed. Keep
+        `bind`, `host`, `port`, `allowed_paths`, and the protocol of each
+        remote: that is where the mismatch usually is.
+      render: yaml
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Things worth ruling out first
+      options:
+        - label: Each key I pasted is exactly 64 characters long (a dropped leading character is a common copy/paste error).
+        - label: The `host` and `port` of the Ferrite remote match the agent's `bind`.
+        - label: Every directory in `allowed_paths` actually exists.
+        - label: "For a shell, the client entry in `ferrous.yaml` has `allow_shell: true`."
+        - label: I removed all passwords and key material from what I pasted above.
+          required: true

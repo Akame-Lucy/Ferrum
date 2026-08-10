@@ -1,0 +1,23 @@
+# Controls the "Sponsor" button on the repository page.
+#
+# Everything is commented out deliberately. An entry here only produces a
+# working button once the corresponding account exists: listing a platform you
+# have not set up yields a dead link on the repo's front page, which is worse
+# than no button at all. Uncomment a line once its account is live.
+#
+# GitHub Sponsors first has to be enabled for the account at
+# https://github.com/sponsors - it is not automatic, and it requires payout
+# details. Once approved, uncomment the line below.
+
+# github: [Akame-Lucy]
+
+# Third-party platforms, if you would rather use one of those:
+# ko_fi: your-handle
+# buy_me_a_coffee: your-handle
+# open_collective: your-collective
+# liberapay: your-handle
+# patreon: your-handle
+
+# Any other URL, for example a personal donation page. Must be a full URL and
+# should be a page you control.
+# custom: ["https://example.com/donate"]
