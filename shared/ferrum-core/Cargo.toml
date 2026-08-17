@@ -20,6 +20,6 @@ thiserror = "1.0"
 tracing = "0.1"
 snow = "0.10"
 argon2 = "0.5"
-rand = "0.8"
+rand = "0.10"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
