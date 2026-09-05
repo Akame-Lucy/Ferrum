@@ -1,8 +1,9 @@
-use ferrum_core::{FerrousRequest, FerrousResponse, NoiseSession, RemoteError};
+use ferrum_core::{FerrousRequest, FerrousResponse, RemoteError};
 use snow::Keypair;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+
+use crate::ferrous_client::FerrousBackend;
 
 /// A live shell session on a Ferrous agent, matching `SshPtySession`'s public
 /// shape so callers can treat the two interchangeably.
@@ -19,33 +20,8 @@ impl FerrousPtySession {
         cols: u32,
         rows: u32,
     ) -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), RemoteError> {
-        let addr = format!("{}:{}", host, port);
-        let mut stream = TcpStream::connect(&addr).await.map_err(|e| {
-            RemoteError::ConnectionFailed(format!("Failed to connect to Ferrous agent at {}: {}", addr, e))
-        })?;
-
-        let (noise, remote_static) = NoiseSession::handshake_initiator(&mut stream, &client_keypair)
-            .await
-            .map_err(|e| RemoteError::ConnectionFailed(format!(
-                "Noise handshake with Ferrous agent at {} failed: {}", addr, e
-            )))?;
-
-        if let Some(expected) = &expected_agent_pubkey {
-            if &remote_static != expected {
-                return Err(RemoteError::Unauthorized(format!(
-                    "Ferrous agent at {} presented an unexpected identity key. It may have been reinstalled, \
-                     or this could be an impersonation attempt. Update agent_pubkey in ferrite.yaml if the \
-                     change is expected.",
-                    addr
-                )));
-            }
-        } else {
-            tracing::warn!(
-                "No agent_pubkey pinned for Ferrous agent at {}; trusting its identity on this connection.",
-                addr
-            );
-        }
-
+        let (noise, stream) =
+            FerrousBackend::open_session(&host, port, &client_keypair, expected_agent_pubkey.as_deref()).await?;
         let (mut read_half, mut write_half) = stream.into_split();
 
         let open_req = serde_json::to_vec(&FerrousRequest::PtyOpen { cols, rows })
@@ -87,7 +63,7 @@ impl FerrousPtySession {
             }
         });
 
-        let reader_noise = noise.clone();
+        let reader_noise = noise;
         tokio::spawn(async move {
             loop {
                 let bytes = match reader_noise.read_message(&mut read_half).await {

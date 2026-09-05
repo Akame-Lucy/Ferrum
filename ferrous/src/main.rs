@@ -20,6 +20,43 @@ type ClientMap = HashMap<Vec<u8>, Capability>;
 /// mirroring how Ferrite finds ferrite.yaml.
 const DEFAULT_CONFIG_FILENAME: &str = "ferrous.yaml";
 
+/// A peer that connects and then never finishes the three-message handshake
+/// would otherwise hold a task (and its buffers) open forever.
+const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Connections in flight at once, authenticated or not. Well above what a
+/// handful of Ferrite instances need (each file operation is one short
+/// connection), low enough that a flood cannot exhaust file descriptors or
+/// spawn unbounded tasks before the handshake rejects it.
+const MAX_CONNECTIONS: usize = 256;
+
+/// Adds the canonical form of every allowed path alongside the configured
+/// spelling, so a root that is itself a symlink (`/srv/data -> /mnt/disk`)
+/// still matches once a request has been resolved through the real
+/// filesystem. The configured spelling stays first: it is what the shell's
+/// working directory and any log lines should show.
+fn expand_allowed_paths(paths: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for configured in paths {
+        let real = if configured == "/" {
+            None
+        } else {
+            std::fs::canonicalize(&configured)
+                .ok()
+                .map(|c| server::strip_verbatim(c).to_string_lossy().to_string())
+        };
+        if !out.contains(&configured) {
+            out.push(configured);
+        }
+        if let Some(real) = real {
+            if !out.contains(&real) {
+                out.push(real);
+            }
+        }
+    }
+    out
+}
+
 /// Written on first run when nothing is configured yet.
 ///
 /// Deliberately ships with an empty `clients` list. Ferrite can generate a
@@ -61,6 +98,8 @@ clients: []
 #      - "/srv/data"
 #    read_only: false
 #    allow_shell: false
+#    # Optional: a restricted shell for this client's sessions.
+#    # shell: "/bin/rbash"
 "#;
 
 /// Absolute path for logging, without the `\\?\` verbatim prefix that
@@ -129,6 +168,9 @@ struct Cli {
     #[arg(long, default_value = "false")]
     no_shell: bool,
 
+    #[arg(long, help = "Shell binary to spawn for sessions (e.g. /bin/rbash); the platform default when unset")]
+    shell: Option<String>,
+
     #[arg(long)]
     allowed_path: Vec<String>,
 
@@ -173,13 +215,22 @@ struct ClientEntry {
     read_only: bool,
     #[serde(default)]
     allow_shell: bool,
+    /// Shell binary for this client's sessions; the platform default when unset.
+    #[serde(default)]
+    shell: Option<String>,
 }
 
-fn client_capability(allowed_paths: Vec<String>, read_only: bool, allow_shell: bool) -> Capability {
+fn client_capability(
+    allowed_paths: Vec<String>,
+    read_only: bool,
+    allow_shell: bool,
+    shell: Option<String>,
+) -> Capability {
     Capability {
         allowed_paths: if allowed_paths.is_empty() { vec!["/".to_string()] } else { allowed_paths },
         read_only,
         allow_shell,
+        shell,
     }
 }
 
@@ -208,7 +259,10 @@ fn load_settings(cli: &Cli, source: &ConfigSource) -> Result<Settings, Box<dyn s
             // which looks like a handshake bug rather than a typo.
             let pubkey = ferrum_core::parse_public_key(&entry.pubkey)
                 .map_err(|e| format!("Invalid client pubkey in config ({}): {}", e, entry.pubkey))?;
-            clients.insert(pubkey, client_capability(entry.allowed_paths, entry.read_only, entry.allow_shell));
+            clients.insert(
+                pubkey,
+                client_capability(entry.allowed_paths, entry.read_only, entry.allow_shell, entry.shell),
+            );
         }
 
         Ok(Settings {
@@ -219,7 +273,8 @@ fn load_settings(cli: &Cli, source: &ConfigSource) -> Result<Settings, Box<dyn s
             run_as_group: file_config.run_as_group,
         })
     } else {
-        let capability = client_capability(cli.allowed_path.clone(), cli.read_only, !cli.no_shell);
+        let capability =
+            client_capability(cli.allowed_path.clone(), cli.read_only, !cli.no_shell, cli.shell.clone());
         let mut clients = ClientMap::new();
         for hex_key in &cli.authorize_client {
             let pubkey = ferrum_core::parse_public_key(hex_key)
@@ -290,7 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("no authorized clients configured".into());
     }
 
-    let settings = load_settings(&cli, &source)?;
+    let mut settings = load_settings(&cli, &source)?;
 
     let identity = ferrum_core::load_or_generate_keypair(&settings.identity_path)?;
     tracing::info!(
@@ -322,6 +377,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    for capability in settings.clients.values_mut() {
+        capability.allowed_paths = expand_allowed_paths(std::mem::take(&mut capability.allowed_paths));
+    }
+
     let addr: SocketAddr = settings.bind.parse()?;
     let identity = Arc::new(identity);
     let clients = Arc::new(settings.clients);
@@ -335,18 +394,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         drop_privileges(user, settings.run_as_group.as_deref())?;
     }
 
+    let limiter = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+
     loop {
         let (mut stream, peer_addr) = listener.accept().await?;
+        let permit = match Arc::clone(&limiter).try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                tracing::warn!("Refusing connection from {}: {} connections already open", peer_addr, MAX_CONNECTIONS);
+                continue;
+            }
+        };
         tracing::info!("Incoming connection from {}", peer_addr);
         let server = Arc::clone(&server);
         let clients = Arc::clone(&clients);
         let identity = Arc::clone(&identity);
 
         tokio::spawn(async move {
-            let (noise, remote_static) = match NoiseSession::handshake_responder(&mut stream, &identity).await {
-                Ok(session) => session,
-                Err(e) => {
+            // Held for the life of the task, so the slot frees itself
+            // however the session ends.
+            let _permit = permit;
+            let handshake = tokio::time::timeout(
+                HANDSHAKE_TIMEOUT,
+                NoiseSession::handshake_responder(&mut stream, &identity),
+            );
+            let (noise, remote_static) = match handshake.await {
+                Ok(Ok(session)) => session,
+                Ok(Err(e)) => {
                     tracing::error!("Noise handshake failed for {}: {}", peer_addr, e);
+                    return;
+                }
+                Err(_) => {
+                    tracing::warn!("Noise handshake with {} timed out after {:?}", peer_addr, HANDSHAKE_TIMEOUT);
                     return;
                 }
             };
@@ -362,10 +441,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return;
                 }
             };
+            // First message must be the version exchange. Either side being
+            // on a different release is reported in words, to the log here
+            // and to Ferrite's UI there, then the connection is closed.
+            let first = match noise.read_message(&mut stream).await {
+                Ok(bytes) => serde_json::from_slice::<FerrousRequest>(&bytes).ok(),
+                Err(_) => None,
+            };
+            let outcome = match &first {
+                Some(req) => server::check_hello(req),
+                None => Err(format!(
+                    "Could not read a version exchange; the client predates v0.2.0 or is not Ferrite. \
+                     This agent is v{}.",
+                    ferrum_core::VERSION
+                )),
+            };
+            let client_version = match outcome {
+                Ok(v) => v,
+                Err(message) => {
+                    tracing::warn!("Refusing session with {}: {}", peer_addr, message);
+                    if let Ok(bytes) = serde_json::to_vec(&FerrousResponse::Error { message }) {
+                        let _ = noise.send_message(&mut stream, &bytes).await;
+                    }
+                    return;
+                }
+            };
+            if let Ok(bytes) = serde_json::to_vec(&server::hello_response()) {
+                if noise.send_message(&mut stream, &bytes).await.is_err() {
+                    return;
+                }
+            }
             tracing::info!(
-                "Authenticated session with {} (client {})",
+                "Authenticated session with {} (client {}, Ferrite v{})",
                 peer_addr,
-                ferrum_core::to_hex(&remote_static)
+                ferrum_core::to_hex(&remote_static),
+                client_version
             );
 
             loop {

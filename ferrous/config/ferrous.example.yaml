@@ -22,3 +22,7 @@ clients:
       - "/srv/data"
     read_only: false
     allow_shell: true
+    # Shell binary for this client's sessions. Unset means the platform
+    # default ($SHELL, or powershell.exe). Point it at a restricted shell to
+    # narrow what a session can do beyond starting in allowed_paths[0]:
+    # shell: "/bin/rbash"

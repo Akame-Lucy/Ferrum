@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    http::{header, StatusCode, Uri},
+    extract::{DefaultBodyLimit, Request, State},
+    http::{header, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -17,7 +18,6 @@ use axum::{
 use clap::{Parser, Subcommand};
 use rust_embed::RustEmbed;
 use tower_cookies::CookieManagerLayer;
-use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::{
@@ -91,11 +91,17 @@ server_auth:
   username: "admin"
   password_hash: ""          # generate with: ferrite hash-password
   totp_secret: null
+  # secure_cookies: true     # set when a reverse proxy terminates TLS in front
 
 tls:
   enabled: false
   cert_path: null
   key_path: null
+
+limits:
+  max_upload_mb: 50          # largest single upload or editor save
+
+# trust_proxy_headers: true  # only behind a proxy that sets X-Forwarded-For
 
 remotes:
   # Browse files on the machine Ferrite itself runs on. Needs no server, which
@@ -123,7 +129,8 @@ remotes:
   #   auth:
   #     password: ""
 
-  # SFTP, against a reachable SSH server.
+  # SFTP, against a reachable SSH server. Secrets may reference the
+  # environment as ${VAR} so they never have to be written into this file.
   # - name: my-sftp-server
   #   protocol: sftp
   #   host: 192.168.1.100
@@ -132,7 +139,7 @@ remotes:
   #   auth:
   #     # Prefer key auth. private_key holds the path to the key file.
   #     private_key: "~/.ssh/id_ed25519"
-  #     password: ""
+  #     password: "${SFTP_PASSWORD}"
 
   # FTP.
   # - name: my-ftp-server
@@ -170,21 +177,81 @@ remotes:
 #     private_key: "~/.ssh/id_ed25519"
 "#;
 
-async fn security_headers_middleware(
-    req: axum::extract::Request,
-    next: Next,
-) -> Response {
+/// Response headers every page and API reply carries.
+///
+/// The CSP allow-lists the two CDNs the editor and terminal load from (their
+/// scripts are additionally pinned by integrity hashes in index.html) and
+/// nothing else; `'unsafe-eval'` is required by Monaco's AMD loader.
+async fn security_headers(State(hsts): State<bool>, req: Request, next: Next) -> Response {
     let mut response = next.run(req).await;
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; img-src 'self' data:; connect-src 'self' ws: wss: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: data:;"
-            .parse()
-            .unwrap(),
+        HeaderValue::from_static(
+            "default-src 'self'; \
+             script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; \
+             style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; \
+             font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; \
+             img-src 'self' data: blob:; \
+             media-src 'self' blob:; \
+             connect-src 'self' ws: wss: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; \
+             worker-src 'self' blob: data:; \
+             frame-ancestors 'none'; \
+             base-uri 'self'; \
+             form-action 'self'; \
+             object-src 'none'",
+        ),
     );
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
-    headers.insert(header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    headers.insert(
+        "permissions-policy",
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+    );
+    if hsts {
+        headers.insert(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        );
+    }
     response
+}
+
+/// The host part of an `Origin` header value, `scheme://host[:port]`.
+fn origin_host(origin: &str) -> &str {
+    origin.split("://").nth(1).unwrap_or(origin).trim_end_matches('/')
+}
+
+/// Refuses WebSocket upgrades and state-changing API calls whose `Origin`
+/// is not this server. The session cookie is `SameSite=Lax`, which already
+/// keeps it off cross-site POSTs and scripted socket opens in every current
+/// browser; this makes the same rule explicit and independent of cookie
+/// behaviour. Requests without an `Origin` (curl, same-origin GETs) are
+/// untouched.
+async fn same_origin_guard(State(trust_proxy): State<bool>, req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    let guarded = path.starts_with("/ws/")
+        || (path.starts_with("/api/") && !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS));
+    if guarded {
+        if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+            let mut allowed: Vec<&str> = Vec::new();
+            if let Some(host) = req.headers().get(header::HOST).and_then(|v| v.to_str().ok()) {
+                allowed.push(host);
+            }
+            if trust_proxy {
+                if let Some(fwd) = req.headers().get("x-forwarded-host").and_then(|v| v.to_str().ok()) {
+                    allowed.extend(fwd.split(',').map(str::trim));
+                }
+            }
+            let origin = origin_host(origin);
+            if !allowed.iter().any(|h| h.eq_ignore_ascii_case(origin)) {
+                tracing::warn!("Refusing cross-origin request to {} from origin {}", path, origin);
+                return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
+            }
+        }
+    }
+    next.run(req).await
 }
 
 #[tokio::main]
@@ -227,7 +294,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ferrum_core::to_hex(&client_keypair.public)
     );
 
-    let app_state = Arc::new(AppState::new(config.clone(), config_path.clone(), Arc::new(client_keypair))?);
+    let cert_file = tls_cert.or_else(|| config.tls.cert_path.as_ref().map(PathBuf::from));
+    let key_file = tls_key.or_else(|| config.tls.key_path.as_ref().map(PathBuf::from));
+    let tls = match (cert_file, key_file) {
+        (Some(cert), Some(key)) => Some((cert, key)),
+        _ => None,
+    };
+
+    let secure_cookies = config.server_auth.secure_cookies.unwrap_or(tls.is_some());
+    if config.server_auth.enabled && !secure_cookies {
+        tracing::warn!(
+            "Login is enabled but the session cookie is not marked Secure. Fine on localhost or a VPN; \
+             behind an HTTPS reverse proxy set server_auth.secure_cookies: true."
+        );
+    }
+    let body_limit = config.limits.max_upload_bytes();
+    let trust_proxy = config.trust_proxy_headers;
+    tracing::info!("Request body limit: {} MiB", config.limits.max_upload_mb);
+
+    let app_state = Arc::new(AppState::new(config, config_path.clone(), Arc::new(client_keypair), secure_cookies)?);
 
     let app = Router::new()
         .route("/api/auth/status", get(auth_status))
@@ -265,24 +350,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/ws/collab", get(collab_ws_handler))
         .route("/ws/events", get(events_ws_handler))
         .fallback(static_handler)
-        .layer(middleware::from_fn(security_headers_middleware))
+        .layer(DefaultBodyLimit::max(body_limit))
+        .layer(middleware::from_fn_with_state(tls.is_some(), security_headers))
+        .layer(middleware::from_fn_with_state(trust_proxy, same_origin_guard))
         .layer(CookieManagerLayer::new())
-        .layer(CorsLayer::permissive())
         .with_state(app_state);
 
     let addr: SocketAddr = bind_addr.parse()?;
+    // Handlers see the peer address (login rate limiting keys on it).
+    let service = app.into_make_service_with_connect_info::<SocketAddr>();
 
-    let cert_file = tls_cert
-        .or_else(|| config.tls.cert_path.as_ref().map(PathBuf::from));
-    let key_file = tls_key
-        .or_else(|| config.tls.key_path.as_ref().map(PathBuf::from));
-
-    if let (Some(cert), Some(key)) = (cert_file, key_file) {
-        serve_tls(addr, app, &cert, &key).await?;
+    if let Some((cert, key)) = tls {
+        serve_tls(addr, service, &cert, &key).await?;
     } else {
         tracing::info!("Ferrite server starting on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, app).await?;
+        axum::serve(listener, service).await?;
     }
 
     Ok(())
@@ -290,7 +373,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn serve_tls(
     addr: SocketAddr,
-    app: Router,
+    service: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, SocketAddr>,
     cert_path: &Path,
     key_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -298,9 +381,7 @@ async fn serve_tls(
 
     tracing::info!("Ferrite server starting with TLS on https://{}", addr);
     let rustls_config = RustlsConfig::from_pem_file(cert_path, key_path).await?;
-    axum_server::bind_rustls(addr, rustls_config)
-        .serve(app.into_make_service())
-        .await?;
+    axum_server::bind_rustls(addr, rustls_config).serve(service).await?;
     Ok(())
 }
 
@@ -331,5 +412,17 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
                     .unwrap()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn origin_host_strips_scheme_and_trailing_slash() {
+        assert_eq!(origin_host("https://files.example.com"), "files.example.com");
+        assert_eq!(origin_host("http://127.0.0.1:8080/"), "127.0.0.1:8080");
+        assert_eq!(origin_host("null"), "null");
     }
 }

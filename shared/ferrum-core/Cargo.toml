@@ -1,6 +1,6 @@
 [package]
 name = "ferrum-core"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 # Internal to the workspace; Ferrum ships binaries, not crates.io libraries.
@@ -22,4 +22,5 @@ snow = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
+base64 = "0.22"
 

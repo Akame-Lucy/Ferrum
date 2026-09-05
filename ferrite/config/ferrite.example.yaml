@@ -18,6 +18,17 @@ tls:
   cert_path: null
   key_path: null
 
+limits:
+  # Largest single upload or editor save, in MiB. Uploads stream through to
+  # the backend, so raising this costs bandwidth during that request, not
+  # memory. Downloads are streamed and have no limit.
+  max_upload_mb: 50
+
+# Believe X-Forwarded-For for the client address that login rate limiting
+# keys on. Enable only behind a reverse proxy that sets the header
+# (packaging/reverse-proxy/ examples do); otherwise clients pick their own.
+trust_proxy_headers: false
+
 remotes:
   # Browse local files on the machine Ferrite runs on (no network server needed).
   - name: this-pc
@@ -58,7 +69,9 @@ remotes:
   #     # Prefer key auth. private_key holds the path to the key file;
   #     # ~ is expanded.
   #     private_key: "~/.ssh/id_ed25519"
-  #     password: ""           # or set your SFTP password here
+  #     # A secret may reference the environment as ${VAR}: it is read at
+  #     # connect time and never written back into this file.
+  #     password: "${SFTP_PASSWORD}"
 
   # FTP example.
   # - name: my-ftp-server

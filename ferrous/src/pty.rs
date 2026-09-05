@@ -16,8 +16,8 @@ impl PtyHandle {
     pub fn resize(&self, cols: u32, rows: u32) {
         if let Ok(master) = self.master.lock() {
             let _ = master.resize(PtySize {
-                rows: rows as u16,
-                cols: cols as u16,
+                rows: rows.clamp(1, 500) as u16,
+                cols: cols.clamp(1, 1000) as u16,
                 pixel_width: 0,
                 pixel_height: 0,
             });
@@ -37,10 +37,34 @@ fn default_shell() -> String {
     }
 }
 
-/// Spawns the platform default shell in a pty scoped to `capability`'s first
-/// allowed path (when that's not the unrestricted `"/"`), and starts two
-/// dedicated OS threads pumping its blocking reader/writer against the
-/// returned mpsc channels, mirroring `ferrite-pty::SshPtySession`'s shape.
+/// Environment variables a shell needs to behave, and nothing else. The
+/// agent's own environment may hold things a remote user has no business
+/// reading (a token from the unit file, a proxy password in `https_proxy`),
+/// so the shell starts from this list rather than inheriting everything.
+const PASSTHROUGH_ENV: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ",
+    // Windows needs these to find its own binaries and profile.
+    "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP",
+    "USERPROFILE", "USERNAME", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH",
+];
+
+fn scrub_environment(cmd: &mut CommandBuilder) {
+    cmd.env_clear();
+    for (key, value) in std::env::vars_os() {
+        let name = key.to_string_lossy().to_ascii_uppercase();
+        if PASSTHROUGH_ENV.contains(&name.as_str()) || name.starts_with("LC_") {
+            cmd.env(key, value);
+        }
+    }
+    cmd.env("TERM", "xterm-256color");
+}
+
+/// Spawns a shell in a pty scoped to `capability`: its working directory is
+/// the first allowed path (when that's not the unrestricted `"/"`), its
+/// binary is the per-client `shell` override when one is configured, and
+/// its environment is reduced to what a shell needs. Two dedicated OS
+/// threads pump the blocking reader/writer against the returned mpsc
+/// channels, mirroring `ferrite-pty::SshPtySession`'s shape.
 pub fn spawn(
     capability: &Capability,
     cols: u32,
@@ -48,10 +72,24 @@ pub fn spawn(
 ) -> Result<SpawnedPty, String> {
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize { rows: rows as u16, cols: cols as u16, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: rows.clamp(1, 500) as u16,
+            cols: cols.clamp(1, 1000) as u16,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new(default_shell());
+    let shell = capability
+        .shell
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(default_shell);
+    let mut cmd = CommandBuilder::new(&shell);
+    scrub_environment(&mut cmd);
+
     if let Some(root) = capability.allowed_paths.first() {
         // A missing directory here is not fatal, but it must not pass
         // silently: Windows ignores an invalid working directory at process
@@ -70,7 +108,10 @@ pub fn spawn(
         }
     }
 
-    let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let mut child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("failed to start shell {:?}: {}", shell, e))?;
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
