@@ -1409,7 +1409,9 @@ function updateBreadcrumbs(filePath) {
 
     const normPath = filePath.replace(/\\/g, '/');
     const parts = normPath.split('/').filter(Boolean);
-    let html = `<span class="crumb-item" onclick="loadDirectory(currentRemote, '/')">${folderIconSvg} /</span>`;
+    // Targets ride in a data attribute and are read back with dataset, so a
+    // path containing a quote can never become part of a handler.
+    let html = `<span class="crumb-item" data-target="/">${folderIconSvg} /</span>`;
 
     let accum = '';
     parts.forEach((p, idx) => {
@@ -1419,12 +1421,14 @@ function updateBreadcrumbs(filePath) {
         if (isLast) {
             html += `<span style="color: var(--text-primary); font-weight: 500;">${escapeHtml(p)}</span>`;
         } else {
-            const folderTarget = accum;
-            html += `<span class="crumb-item" onclick="loadDirectory(currentRemote, '${escapeHtml(folderTarget)}')">${escapeHtml(p)}</span>`;
+            html += `<span class="crumb-item" data-target="${escapeHtml(accum)}">${escapeHtml(p)}</span>`;
         }
     });
 
     bar.innerHTML = html;
+    bar.querySelectorAll('.crumb-item').forEach(el => {
+        el.addEventListener('click', () => loadDirectory(currentRemote, el.dataset.target));
+    });
 }
 
 function updateVSCodeStatusBar(filePath) {
@@ -2253,8 +2257,9 @@ async function loadDirectory(remote, path) {
                 <div class="empty-state" style="padding: 20px; text-align: center; gap: 8px;">
                     <div style="font-weight: 600; color: #ef4444;">Authentication Required</div>
                     <div style="font-size: 11px; color: var(--text-muted);">Update username and password to connect.</div>
-                    <button class="btn-subtle" onclick="openRemoteModal('${escapeHtml(remote)}')" style="margin-top: 6px;">Configure Credentials</button>
+                    <button class="btn-subtle configure-remote" style="margin-top: 6px;">Configure Credentials</button>
                 </div>`;
+            tree.querySelector('.configure-remote').addEventListener('click', () => openRemoteModal(remote));
             return [];
         }
         if (!res.ok) {
@@ -2277,8 +2282,9 @@ async function loadDirectory(remote, path) {
             <div class="empty-state" style="padding: 20px; text-align: center; gap: 8px;">
                 <div style="font-weight: 600; color: #ef4444;">Connection Failed</div>
                 <div style="font-size: 11px; color: var(--text-muted); max-width: 260px; word-break: break-word;">${escapeHtml(msg)}</div>
-                <button class="btn-subtle" onclick="openRemoteModal('${escapeHtml(remote)}')" style="margin-top: 6px;">Configure Connection</button>
+                <button class="btn-subtle configure-remote" style="margin-top: 6px;">Configure Connection</button>
             </div>`;
+        tree.querySelector('.configure-remote').addEventListener('click', () => openRemoteModal(remote));
         return [];
     }
 }
@@ -2396,6 +2402,9 @@ function renderDirectoryItems(files, dirPath, level, container) {
 
         const fileIconSvg = getFileIconSvg(f.name, f.is_dir, isExpanded);
         const sizeStr = f.is_dir ? '' : formatBytes(f.size);
+        // Backends that know the mtime report it as Unix seconds; the row's
+        // tooltip is the least intrusive place to show it in a narrow tree.
+        const modifiedTitle = f.modified ? ` title="Modified ${new Date(f.modified * 1000).toLocaleString()}"` : '';
 
         let gitSt = currentGitStatuses.get(f.path) || currentGitStatuses.get(f.name);
         if (!gitSt && currentGitRepoRoot) {
@@ -2427,9 +2436,9 @@ function renderDirectoryItems(files, dirPath, level, container) {
             ${foldIconHtml}
             <span class="file-icon-badge">${fileIconSvg}</span>
             <input type="checkbox" class="file-checkbox" ${isChecked}>
-            <span class="name ${nameGitClass}">${escapeHtml(f.name)}</span>
+            <span class="name ${nameGitClass}"${modifiedTitle}>${escapeHtml(f.name)}</span>
             ${gitBadgeHtml}
-            <span class="size">${sizeStr}</span>
+            <span class="size"${modifiedTitle}>${sizeStr}</span>
             <div class="actions-mini">
                 ${gitDiffBtnHtml}
                 <span class="btn-mini btn-rename">R</span>
@@ -2905,8 +2914,17 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+// Safe for text content and for double- or single-quoted attribute values.
+// Never safe for building a JavaScript string inside an inline handler:
+// attribute decoding runs before the script does, so the quote comes back.
+// Use data attributes and addEventListener for that instead.
 function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // --- GIT LENS & VISUAL DIFF MODULE ---
@@ -3088,8 +3106,12 @@ function openGitModal() {
                     <span class="git-badge ${statusClass}">${status}</span>
                     <span style="color: var(--text-primary);">${escapeHtml(path)}</span>
                 </div>
-                <button class="btn-subtle" style="font-size: 9px; padding: 2px 6px;" onclick="document.getElementById('git-modal').style.display='none'; openGitDiff('${escapeHtml(path)}');">View Diff</button>
+                <button class="btn-subtle" style="font-size: 9px; padding: 2px 6px;">View Diff</button>
             `;
+            row.querySelector('button').addEventListener('click', () => {
+                document.getElementById('git-modal').style.display = 'none';
+                openGitDiff(path);
+            });
             bodyEl.appendChild(row);
         });
     }

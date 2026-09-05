@@ -36,13 +36,6 @@ ignore = [
     # lines when it lands.
     "RUSTSEC-2026-0194", # quick-xml: quadratic parse time on duplicate attribute names
     "RUSTSEC-2026-0195", # quick-xml: unbounded namespace allocation in NsReader
-
-    # --- Unmaintained crate, no upgrade available --------------------------
-    #
-    # "Unmaintained" is a maintenance signal, not an exploitable defect. This
-    # one is transitive with no fixed version to move to; the exit is suppaftp
-    # dropping async-std, or us replacing suppaftp as the FTP backend.
-    "RUSTSEC-2025-0052", # async-std, via suppaftp
 ]
 
 [licenses]

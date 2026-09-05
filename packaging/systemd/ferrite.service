@@ -14,6 +14,11 @@ RestartSec=5
 User=ferrite
 Group=ferrite
 
+# Secrets referenced from ferrite.yaml as ${VAR} (remote passwords, S3 keys)
+# are read from the environment, so they can live here, owner-only, instead
+# of in the config file. Create it with mode 0600 and one KEY=value per line.
+EnvironmentFile=-/etc/ferrite/env
+
 # --- Sandboxing ---
 # ProtectSystem=strict makes the whole filesystem read-only except what's
 # listed below. /etc/ferrite must stay writable: the web UI's Settings/Users
