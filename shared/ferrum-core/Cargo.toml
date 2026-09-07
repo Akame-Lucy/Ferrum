@@ -22,5 +22,5 @@ snow = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
-base64 = "0.22"
+base64 = "0.23"
 
