@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (e.g. v0.1.0-rusty-nail)'
+        description: 'Release Tag (e.g. v0.2.0-lodestone)'
         required: true
-        default: 'v0.1.0-rusty-nail'
+        default: 'v0.2.0-lodestone'
       draft:
         description: 'Create Draft Release'
         required: true

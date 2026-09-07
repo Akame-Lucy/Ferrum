@@ -42,7 +42,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: The line both binaries log at startup, for example `v0.2.0 "Rusty Nail"`. Ferrite and Ferrous must be the same release; a mismatch is refused with a message naming both.
+      description: The line both binaries log at startup, for example `v0.2.0 "Lodestone"`. Ferrite and Ferrous must be the same release; a mismatch is refused with a message naming both.
     validations:
       required: true
 
