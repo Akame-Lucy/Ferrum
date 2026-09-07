@@ -27,4 +27,4 @@ argon2 = "0.5"
 bytes = "1.6"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.25", features = ["user"] }
+nix = { version = "0.28", features = ["user"] }
