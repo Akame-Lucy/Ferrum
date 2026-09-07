@@ -28,6 +28,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// (releases up to 0.1.1). 2 = chunked framing, base64 payloads, chunked
 /// file transfer, the Hello exchange (0.2.0).
 pub const PROTOCOL_VERSION: u32 = 2;
-pub const VERSION_CODENAME: &str = "Rusty Nail";
-pub const FULL_VERSION_INFO: &str = concat!("v", env!("CARGO_PKG_VERSION"), " \"Rusty Nail\"");
+/// The release codename, defined once as a macro because `concat!` only
+/// accepts literals. Change it here and both constants below follow.
+macro_rules! codename {
+    () => {
+        "Lodestone"
+    };
+}
+
+pub const VERSION_CODENAME: &str = codename!();
+pub const FULL_VERSION_INFO: &str = concat!("v", env!("CARGO_PKG_VERSION"), " \"", codename!(), "\"");
 
