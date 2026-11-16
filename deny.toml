@@ -36,6 +36,11 @@ ignore = [
     # lines when it lands.
     "RUSTSEC-2026-0194", # quick-xml: quadratic parse time on duplicate attribute names
     "RUSTSEC-2026-0195", # quick-xml: unbounded namespace allocation in NsReader
+
+    # serde_yaml_ng still uses the upstream libyaml bindings, and no
+    # maintained YAML implementation with a compatible API is available yet.
+    # Revisit when serde_yaml_ng removes this transitive dependency.
+    "RUSTSEC-2024-0449", # unsafe-libyaml is unmaintained
 ]
 
 [licenses]
@@ -47,6 +52,7 @@ allow = [
     "0BSD",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
+    "bzip2-1.0.6",
     "BSD-1-Clause",
     "BSD-2-Clause",
     "BSD-3-Clause",

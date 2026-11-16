@@ -288,7 +288,7 @@ impl Config {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, RemoteError> {
         let content = fs::read_to_string(&path)
             .map_err(RemoteError::Io)?;
-        let mut config: Config = serde_yaml::from_str(&content)
+        let mut config: Config = serde_yaml_ng::from_str(&content)
             .map_err(|e| RemoteError::OperationFailed(format!("Invalid config YAML: {}", e)))?;
 
         // One-time migration: fold the legacy single-admin `server_auth` block into
@@ -321,7 +321,7 @@ impl Config {
     /// Unix, because the file holds remote credentials and password hashes.
     pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), RemoteError> {
         let path = path.as_ref();
-        let yaml = serde_yaml::to_string(self)
+        let yaml = serde_yaml_ng::to_string(self)
             .map_err(|e| RemoteError::OperationFailed(format!("Failed to serialize config: {}", e)))?;
 
         let file_name = path
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn limits_default_to_fifty_mib_and_old_configs_still_parse() {
-        let cfg: Config = serde_yaml::from_str("remotes: []\n").unwrap();
+        let cfg: Config = serde_yaml_ng::from_str("remotes: []\n").unwrap();
         assert_eq!(cfg.limits.max_upload_mb, 50);
         assert_eq!(cfg.limits.max_upload_bytes(), 50 * 1024 * 1024);
         assert!(!cfg.trust_proxy_headers);
@@ -450,7 +450,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ferrum-cfg-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("ferrite.yaml");
-        let cfg: Config = serde_yaml::from_str("remotes: []\n").unwrap();
+        let cfg: Config = serde_yaml_ng::from_str("remotes: []\n").unwrap();
         cfg.save_to_file(&path).unwrap();
         assert!(path.is_file());
         let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();

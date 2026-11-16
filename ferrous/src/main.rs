@@ -250,7 +250,7 @@ fn load_settings(cli: &Cli, source: &ConfigSource) -> Result<Settings, Box<dyn s
         tracing::info!("Loading configuration from {}", display_path(config_path));
 
         let content = std::fs::read_to_string(config_path)?;
-        let file_config: FileConfig = serde_yaml::from_str(&content)?;
+        let file_config: FileConfig = serde_yaml_ng::from_str(&content)?;
 
         let mut clients = ClientMap::new();
         for entry in file_config.clients {

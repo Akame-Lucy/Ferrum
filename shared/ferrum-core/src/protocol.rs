@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn capability_without_shell_field_still_parses() {
         let yaml = "allowed_paths: ['/srv']\nread_only: true\nallow_shell: false\n";
-        let c: Capability = serde_yaml::from_str(yaml).unwrap();
+        let c: Capability = serde_yaml_ng::from_str(yaml).unwrap();
         assert!(c.shell.is_none());
         assert!(c.read_only);
     }

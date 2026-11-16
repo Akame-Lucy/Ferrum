@@ -62,8 +62,9 @@ pub async fn zip_inspect(
     let mut entries = Vec::new();
     for i in 0..archive.len().min(MAX_LISTED_ENTRIES) {
         if let Ok(entry) = archive.by_index(i) {
+            let Ok(name) = entry.name() else { continue };
             entries.push(ZipEntryItem {
-                name: entry.name().to_string(),
+                name: name.into_owned(),
                 uncompressed_size: entry.size(),
                 compressed_size: entry.compressed_size(),
                 is_dir: entry.is_dir(),

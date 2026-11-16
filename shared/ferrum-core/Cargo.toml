@@ -14,7 +14,7 @@ futures-util = "0.3"
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+serde_yaml_ng = "0.10"
 serde_json = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
@@ -23,4 +23,3 @@ argon2 = "0.5"
 rand = "0.8"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 base64 = "0.22"
-
